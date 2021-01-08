@@ -1,0 +1,2495 @@
+---
+title: "Final FBOM results"
+author: "JMH"
+date: "24 Oct. 2020"
+output: 
+  html_document:
+    toc: true # table of content true
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    toc_float: true
+    number_sections: true  ## if you want number sections at each table header
+    theme: cosmo  # many options for theme, this one is my favorite.
+    highlight: tango  # specifies the syntax highlighting style
+editor_options: 
+  chunk_output_type: console
+---
+
+# LOAD LIBRARIES
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+# LOAD LIBRARIES
+library(here)
+library(tidyverse)
+library(gridExtra)
+library(GGally)
+# library(devtools)a
+library(vegan)
+# devtools::install_github("gavinsimpson/ggvegan")
+# devtools::install_github("kassambara/ggcorrplot")
+library(ggvegan)
+library(ggcorrplot)
+library(ggpubr)
+library(lme4)
+library(car)
+library(MuMIn)
+# library(mgcv)
+library(ggrepel)
+# library(mgcViz)
+library(broom)
+library(broom.mixed)
+library(purrr)
+library(mgcv)
+library(tidymv)
+library(Hmisc)
+```
+
+# LOAD DATA
+
+Processed data file. Munging occured in 4_definativeDatasets
+```{r}
+  # FBOM data
+  fbom0 <- readr::read_csv(file.path(here::here("01_data"),"00_FBOMsummary2_17Sept18.csv"))[,-1]
+
+  # FSOM data
+  seston2 <- readr::read_csv(file.path(here::here("01_data"),"SestonSummary.csv"))
+  sites <- readr::read_csv(file.path(here::here("01_data"),"Sites.csv"))[,-1]
+```
+
+## BG chem
+```{r}
+# BG conc data from "jf h2o survey - aug 07.xls"
+stream <- c("MKLY", "Fox", "JOH", "Elder", "SFAS", "SF")
+ugNH4Lbg2007 <- c(3.6, 4.3, 6.8, 5.6, 4.4, 10.6)
+ugPLbg2007 <-  c(18.1, 27.3, 33.2, 21.3, 19.1, 8.7)
+```
+
+## FBOM
+Munging occuring behind the scenes.
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+fbom0$size <- as.character(fbom0$size)
+fbom0[fbom0$gDMperLavg == "L53" & is.na(fbom0$size),"size"] <- "L53" 
+  fbom0$pool = as.factor(fbom0$pool)
+  fbom0$size = factor(fbom0$size, levels = c("B", "L53", "G53", "G106", "G250"))
+  fbom0$logWA = log10(fbom0$WA)
+```
+
+
+### Calculations & unit changes
+```{r}
+bgConc2007 <- as.data.frame(cbind(stream, ugNH4Lbg2007, ugPLbg2007))
+  bgConc2007$ugNH4Lbg2007 <- as.numeric(as.character(bgConc2007$ugNH4Lbg2007))
+  bgConc2007$ugPLbg2007 <-  as.numeric(as.character(bgConc2007$ugPLbg2007))
+
+fbom <- fbom0 %>% 
+  left_join(bgConc2007, by = "stream") %>% 
+  mutate(microbCN = mgCgAFDM/mgNgAFDM,
+         ugU_mgDM_h_Namb = -UE_N * ugNH4Lbg2007 * 60 *60 / mgDML_N,
+         ugU_mgDM_h_Pamb = -UE_P * ugPLbg2007 * 60 *60 / mgDML_P,
+         ugU_m2_h_N = ugU_mgDM_h_Namb * (gDMm2A*1000),
+         ugU_m2_h_P = ugU_mgDM_h_Pamb * (gDMm2A*1000),
+         ugU_Milcell_h_N = ugU_m2_h_N /(BacPerM2/1000000),
+         ugU_Milcell_h_P = ugU_m2_h_P / (BacPerM2/1000000),
+         R_Milcell_h = R_mgDOm2perH / (BacPerM2/1000000),
+         microC_m2 = mgCgAFDM*gAFDMm2,
+         microN_m2 = mgNgAFDM*gAFDMm2,
+         ugU_micC_h_N = ugU_m2_h_N/microC_m2,
+         ugU_micC_h_P = ugU_m2_h_P/microC_m2,
+         R_micC_h = R_mgDOm2perH/microC_m2,
+         ugU_micN_h_N = ugU_m2_h_N/microN_m2,
+         ugU_micN_h_P = ugU_m2_h_P/microN_m2,
+         R_micN_h = R_mgDOm2perH/microN_m2,
+         ugU_mgR_h_N = ugU_m2_h_N/R_mgDOm2perH,
+        ugU_mgR_h_P = ugU_m2_h_P/R_mgDOm2perH,
+        # calculated wrong in 06b_bacteria
+        numPerGafdm = ifelse(size == "B", numPerGafdm*1000, numPerGafdm)) %>% 
+  mutate(stream = factor(stream, levels = c("MKLY","Fox", "JOH", "Elder","SFAS", "SF" )))
+
+
+```
+
+
+
+## Subset data
+
+### Size fractions
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+SizeFracComp <- c("stream", "pool", "size", "logWA",
+                  "gDMm2S", "gAFDMm2")
+```
+
+
+```{r}
+fbomScomp <- fbom %>%
+  select(all_of(SizeFracComp)) %>% 
+  group_by(stream, pool, size, logWA) %>% 
+  gather(key = key, value = value, -stream, -pool, -size, -logWA) %>% 
+  mutate(key2 = paste0(size,"__", key)) %>% 
+  group_by(stream, pool, logWA) %>% 
+  select(-size, -key) %>% 
+  spread(key = key2, value = value) %>% 
+  mutate(B2__gAFDMm2 = sum(L53__gAFDMm2, G53__gAFDMm2, G106__gAFDMm2, G250__gAFDMm2, na.rm = FALSE),
+         B2__gDMm2S = sum(L53__gDMm2S, G53__gDMm2S, G106__gDMm2S, G250__gDMm2S, na.rm = FALSE),
+         perL53_afdm = L53__gAFDMm2/ B2__gAFDMm2,
+         perG53_afdm = G53__gAFDMm2/ B2__gAFDMm2,
+         perG106_afdm = G106__gAFDMm2/ B2__gAFDMm2,
+         perG250_afdm = G250__gAFDMm2/ B2__gAFDMm2,
+         perL53_dm = L53__gDMm2S/ B2__gDMm2S,
+         perG53_dm = G53__gDMm2S/ B2__gDMm2S,
+         perG106_dm = G106__gDMm2S/ B2__gDMm2S,
+         perG250_dm = G250__gDMm2S/ B2__gDMm2S) %>% 
+  select(stream, pool, logWA, B2__gAFDMm2, B__gAFDMm2, 
+         L53__gAFDMm2, G53__gAFDMm2, G106__gAFDMm2, G250__gAFDMm2,
+         perL53_afdm, perG53_afdm, perG106_afdm, perG250_afdm) #just AFDM stuff
+```
+
+
+```{r}
+fbomScompL53 <- fbomScomp %>% 
+  ungroup() %>% 
+  mutate(ID = paste0(stream, "__", pool)) %>% 
+  select(ID, perL53_afdm) #little relation b/w afdm and dm, sticking w afdm for everything
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+SizeFracParameters <- c("stream", "size", "logWA",
+                 "del13C", "del15N",
+                 "perOM", "perCafdm", "perNafdm", "perPafdm",
+                 "CNafdm", "CPafdm", "NPafdm")
+```
+
+no worries about warnings here
+```{r}
+fbomS <- fbom %>%
+  filter(size != "B") %>% 
+  mutate(perCafdm = ifelse(perCafdm < 70, perCafdm, as.numeric("NA"))) %>% #some of these are unreasonably high due to low DM
+  select(all_of(SizeFracParameters)) %>% 
+  mutate_at(vars(perOM:NPafdm), funs(log10)) # log trans for normality assumptions
+```
+
+
+
+### Bulk fluxes
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+BulkParameters <- c("stream", "pool", "logWA",
+                    # FPOM constituents
+                    "del13C", "del15N",
+                    "CNafdm", "CPafdm", "NPafdm", "perOM", "perCafdm", "perNafdm", "perPafdm",
+                    "numPerGafdm", "mgCgAFDM", "mgNgAFDM",
+                    # Stocks
+                    "gDMm2S", "gAFDMm2", "gCm2", "gNm2", "gPm2", "BacPerM2", "microC_m2", "microN_m2",
+                    # Areal Fluxes
+                    "ugU_m2_h_N", "ugU_m2_h_P", "R_mgDOm2perH",
+                    # cell-specific fluxes
+                    "ugU_Milcell_h_N", "ugU_Milcell_h_P", "R_Milcell_h", 
+                    # microbial C and N specific
+                    "ugU_micC_h_N", "ugU_micC_h_P", "R_micC_h",
+                    "ugU_micN_h_N", "ugU_micN_h_P", "R_micN_h",
+                    # respiration specific
+                    "ugU_mgR_h_N", "ugU_mgR_h_P",
+                    # mass-specific fluxes
+                    "ugU_mgAFDM_h_N", "ugU_mgAFDM_h_P", "R_mgDOmgAFDMh_mean")
+```
+
+```{r}
+fbomB <- fbom %>% 
+  filter(size == "B") %>% 
+  mutate(perCafdm = ifelse(perCafdm < 70, perCafdm, as.numeric("NA"))) %>% #some of these are unreasonably high due to low DM
+  select(all_of(BulkParameters)) %>% 
+  # 2 negative N uptake (ELDER & SFAS) & 3 negative P uptake (ELDER,FOX,JOH) lost
+  mutate_at(vars(CNafdm:R_mgDOmgAFDMh_mean), funs(log10)) %>%  # log transformation for normality assumptions, excludes CN isotopes
+  mutate(ID = paste0(stream, "__", pool)) %>% 
+  full_join(fbomScompL53, by = "ID") %>% 
+  select(-ID) %>% 
+  filter(stream != "NA")
+```
+
+
+### Seston data
+
+```{r}
+	seston3 = merge(seston2, sites, by.x = "newSite", by.y = "siteName", all.x = TRUE) %>% 
+            rename(CN = 'C/N')
+```
+
+```{r}
+seston4 <- seston3 %>% 
+	  mutate(C_N1 = ugC/ugN *14/12,
+	         C_N2 = NIRS_ugC_L/NIR_ugN_L * 14/12,
+	         C_N3 = CN *14/12,
+	         Pdt = as.POSIXct(Date, format = "%m/%d/%y"),
+	         M = as.numeric(as.character(strftime(Pdt, format = "%m")))) 
+```
+
+```{r}
+	seston4$C_N <- rowMeans(seston4[,c("C_N1", "C_N2", "C_N3")], na.rm = TRUE)
+```
+
+```{r}
+	ses <- seston4 %>% 
+	  mutate(Y = as.factor(as.character(strftime(Pdt, format = "%Y"))),
+	         logWA = log10(WA),
+	         logChla = log10(ugChlaL + 0.001)) %>% 
+	  filter(M >= 8) %>% 
+	  select(newSite, Pdt, Y, d13C, d15N, C_N, NIRS_ugC_L, NIR_ugN_L, logChla, logWA)
+```
+
+### Seston & FBOM comp
+
+Seston summary sheet to merge with FBOM data
+```{r}
+sesFBOMmerge <- ses %>% 
+	 filter(Y == "2008") %>% 
+  group_by(newSite) %>% 
+  summarise_at(.vars = vars(d13C, d15N, C_N, logChla, logWA),
+               .funs = c(mean = "mean", sd = "sd"), na.rm = TRUE) 
+```
+
+```{r}
+fbom04SesJoin <- fbom0 %>% 
+  #older code here
+  mutate(pool = as.factor(pool),
+         stream = factor(stream, levels = c("MKLY", "Fox", "JOH", "Elder","SFAS", "SF")),
+         CNafdm = perCafdm / perNafdm * (14/12),
+         siteName = factor(siteName, levels = c("MKLY", "Fox", "JOH", "Elder","SFAS", "HQ", "MG", "GB", "BW"))) %>% 
+  mutate(siteName = fct_recode(siteName, LE = "Elder",
+                               SF_AS = "SFAS",
+                               SF_HQ = "HQ",
+                               SF_Wlbridge = "GB",
+                               SF_Wlbridge = "MG",
+                               SF_Globbi = "BW")) %>% 
+  group_by(siteName) %>% 
+  summarise_at(.vars = vars(del13C, del15N, CNafdm),
+               .funs = c(mean = "mean", sd = "sd"), na.rm = TRUE) 
+```
+
+```{r}
+fbomSes <- fbom04SesJoin %>% 
+    left_join(sesFBOMmerge, by = c("siteName" = "newSite")) %>% 
+    select(siteName, 
+           F_13C = del13C_mean,
+           F_15N = del15N_mean,
+           F_CN = CNafdm_mean,
+           S_13C = d13C_mean,
+           S_15N = d15N_mean,
+           S_CN = C_N_mean,
+           logWA_mean) %>% 
+    mutate(logWA_mean = ifelse(siteName == "SF_Wlbridge", 2.16, logWA_mean),
+            WA = 10^logWA_mean,
+            siteName = as.factor(siteName),
+            siteName = fct_recode(siteName, SFAS = "SF_AS",
+                             SFGB = "SF_HQ",
+                             SFGB = "SF_Wlbridge",
+                             SFGB = "SF_Globbi"),
+              siteName = fct_relevel(siteName, "MKLY", "Fox", "JOH", "LE", "SFAS", "SFGB"))
+```
+
+
+
+# Results
+
+## K ~ NH4
+Reviewer 2 asked about this
+```{r}
+ugNH4Lbg2007 <- c(3.6, 4.3, 6.8, 5.6, 4.4, 10.6)
+stream <- c("MKLY", "Fox", "JOH", "Elder", "SFAS", "SF")
+backgroundNH4 <- as.data.frame(cbind(stream, ugNH4Lbg2007))
+blah2 <- fbom0 %>% 
+  left_join(backgroundNH4, by = "stream") %>% 
+   filter(size == "B") %>% 
+  mutate(ugNH4Lbg2007 = as.numeric(ugNH4Lbg2007))
+```
+
+```{r}
+ggplot(blah2, aes(y = UE_N, x = ugNH4Lbg2007, color = stream)) + geom_point()
+```
+
+```{r}
+cor(blah2$UE_N, blah2$ugNH4Lbg2007, method = "pearson", use = "pairwise.complete.obs")
+```
+
+
+## FBOM stocks
+
+### CV of FBOM mass
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+CVwithinStreams <- fbomB %>% 
+  select(stream, gAFDMm2) %>% 
+  mutate(gAFDMm2 = 10^(gAFDMm2)) %>% 
+  group_by(stream) %>% 
+  summarise_at(vars(gAFDMm2), funs(mean, sd), na.rm = TRUE) %>% 
+  mutate(CV = sd/mean * 100)
+
+CVamongStreams <-  fbomB %>% 
+  select(stream, gAFDMm2) %>% 
+  mutate(gAFDMm2 = 10^(gAFDMm2)) %>% 
+  group_by(stream) %>% 
+  summarise_at(vars(gAFDMm2), funs(mean), na.rm = TRUE) %>% 
+  ungroup() %>% 
+  summarise_at(vars(gAFDMm2), funs(mean, sd)) %>% 
+  mutate(CV = sd/mean * 100)
+
+meanCVwithinStreams <- mean(CVwithinStreams$CV)
+
+CVamongStreams$CV; meanCVwithinStreams
+```
+
+## FBOM size fractions
+
+Subset data
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+fbomScomp2 <- fbomScomp %>% 
+  filter(perL53_afdm > 0.35) # removes 2 very low values
+```
+
+Logit transform data
+```{r}
+logitTransform <- function(p) { log(p/(1-p)) }
+fbomScomp2a <- fbomScomp %>% 
+  filter(perL53_afdm > 0.35) %>% 
+  mutate_at(vars(perL53_afdm:perG250_afdm), funs(logitTransform(.)))
+```
+
+
+### RDA of size fractions
+
+Prepare data
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+RDASizeVars <- c( "stream", "size", "logWA",
+               #"del13C", "del15N",
+               "perOM", "perCafdm", "perNafdm", "perPafdm",
+               "CNafdm", "CPafdm", "NPafdm")
+
+fbomSrda <- fbomS %>% 
+  select(all_of(RDASizeVars)) %>% 
+  filter(complete.cases(.)) %>% 
+  mutate_at(vars(perOM:NPafdm), funs(scale)) 
+
+fbomSrdaComm <- fbomSrda %>% 
+  select(-stream, -size, -logWA)
+
+```
+
+Forward/backward selection of RDA model
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+compSizeRda0 <- rda(fbomSrdaComm ~ 1, fbomSrda)
+compSizeRdaFull <- rda(fbomSrdaComm ~ size * logWA, fbomSrda)
+# compSizeRdaStep <- step(compSizeRda0, scope = formula(compSizeRdaFull), test = "perm") #best model has interaction
+compSizeRdaStep <- ordistep(compSizeRda0, scope = formula(compSizeRdaFull), direction = "both") #best model has interaction
+```
+
+"Best" RDA for size fractions
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+compSizeRda <- rda(fbomSrdaComm ~ size * logWA, fbomSrda); compSizeRda
+```
+
+
+```{r}
+FBOMSrdacorMat.L53 <- cbind(fbomSrda, scores(compSizeRda, dis = "si", choices = 1:2)) %>% 
+  filter(size == "L53") %>% 
+  select(-stream, -size)
+
+FBOMSrdacorMat.G53 <- cbind(fbomSrda, scores(compSizeRda, dis = "si", choices = 1:2)) %>% 
+  filter(size == "G53") %>% 
+  select(-stream, -size)
+
+FBOMSrdacorMat.G106 <- cbind(fbomSrda, scores(compSizeRda, dis = "si", choices = 1:2)) %>% 
+  filter(size == "G106") %>% 
+  select(-stream, -size)
+
+FBOMSrdacorMat.G250 <- cbind(fbomSrda, scores(compSizeRda, dis = "si", choices = 1:2)) %>% 
+  filter(size == "G250") %>% 
+  select(-stream, -size)
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+anova(compSizeRda)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+anova(compSizeRda, by = "term")
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+anova(compSizeRda, by = "axis")
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+compSizeRdaF <- fortify(compSizeRda, scaling = 1) #fortify comes from ggvegan
+#scaling = 1 is a distance plot
+  #distances b/w points approximate euclidean distances...mostly
+  #right-angle projects of points on to response vectors represent approx value
+  #angles b/w response vectors are meaningless
+  #angles b/w response and env vectors represent cor
+#scaling = 2 is a correlation plot
+  #distances among points DOES NOT represent euclidean distances
+  #right-angle projections of points onto response vectors represent approx value
+  #angles b/w all vectors reflect their linear correlation. Correlation is equal to the cosie of the angle b/w vectors
+
+compSizeRdaSites <- cbind(compSizeRdaF[compSizeRdaF$Score == "sites",], fbomSrda$stream, fbomSrda$size)
+names(compSizeRdaSites)[9] <- "Stream"
+names(compSizeRdaSites)[10] <- "Size"
+compSizeRdaSites2 <- compSizeRdaSites %>% 
+  mutate(SizeN = as.numeric(ifelse(Size == "L53", "1",
+                        ifelse(Size == "G53", "2",
+                        ifelse(Size == "G106", "3", 
+                        ifelse(Size == "G250", "4","0"))))))
+
+
+compSizeRdaSp <-  compSizeRdaF[compSizeRdaF$Score == "species",] %>% 
+  mutate(Label = fct_recode(Label, "%OM" = "perOM",
+                            "%C" = "perCafdm",
+                            "%N" = "perNafdm",
+                            "%P" = "perPafdm",
+                            "C:N" = "CNafdm",
+                            "C:P" = "CPafdm",
+                            "N:P" = "NPafdm"))
+
+CompSizeBpLabels <- c("logWA", "sizeG53:logWA", "sizeG106:logWA", "sizeG250:logWA")
+
+compSizeRdaBP <-  compSizeRdaF[compSizeRdaF$Score == "biplot",] %>% 
+  filter(Label %in% CompSizeBpLabels) %>% #vegan doesn't plot the first three
+  mutate(Label = fct_recode(Label, 
+                            "<53 x WA" = "logWA",
+                            "53-106 x WA" = "sizeG53:logWA",
+                            "106-250 x WA" = "sizeG106:logWA",
+                            "250-1000 x WA" = "sizeG250:logWA"))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+fbomSsum <- fbomS %>% 
+  mutate(del15N = ifelse(del15N > 10, as.numeric("NA"), del15N),# value os >10
+         perCafdm = exp(perCafdm)) %>% 
+  select(stream, size, logWA, del15N, del13C, perCafdm) %>% 
+  group_by(stream, size) %>% 
+  summarise_at(vars(logWA:perCafdm), funs(mean, sd), na.rm = TRUE) %>% 
+  select(-logWA_sd) %>% 
+  mutate(SizeN = as.numeric(ifelse(size == "L53", "1",
+                        ifelse(size == "G53", "2",
+                        ifelse(size == "G106", "3",
+                        ifelse(size == "G250", "4","0")))))) 
+```
+
+## FBOM comp
+
+### RDA
+prepare data
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+RDABulkVars <- c( "stream", "logWA", "pool",
+                  #"del13C", "del15N",
+                  "perOM", "perCafdm", "perNafdm", "perPafdm",
+                  "CNafdm", "CPafdm", "NPafdm",
+                  "numPerGafdm", "mgCgAFDM", "mgNgAFDM",
+                  "perL53_afdm")
+
+fbomBrda <- fbomB %>% 
+  select(all_of(RDABulkVars)) %>% 
+  filter(complete.cases(.)) %>% 
+  mutate_at(vars(perOM:perL53_afdm), funs(scale))
+
+fbomBrdaComm <- fbomBrda %>%
+  select(-stream, -pool, -logWA)
+```
+
+Final and only model
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+compRda <- rda(fbomBrdaComm ~ logWA, fbomBrda)
+compRda
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+anova(compRda)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+anova(compRda, by = "term")
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+anova(compRda, by = "axis")
+```
+
+```{r}
+  CompRDAAxesCors <- cor(fbomBrda[,-c(1,3)], scores(compRda, dis = "si", choices = 1:2), method = "spearman")
+  round(CompRDAAxesCors,2)
+```
+
+### Table S3
+```{r}
+library(Hmisc)
+rcorr(as.matrix(cbind(fbomBrda[,-c(1,3)], scores(compRda, dis = "si", choices = 1:2))), type = c("spearman"))
+
+TableS3m <- rcorr(as.matrix(cbind(fbomBrda[,-c(1,3)],
+                      scores(compRda, dis = "si", choices = 1:2))))
+TableS3 <- as.data.frame(TableS3m$r)
+
+```
+
+```{r include = FALSE}
+readr::write_csv(TableS3, file.path(here::here("04_tables"), "TableS3.csv"))
+```
+
+
+### Data for plot
+https://cran.r-project.org/web/packages/vegan/vignettes/decision-vegan.pdf
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+compRdaF <- fortify(compRda, scaling = 1)
+
+combRdaSites <- cbind(compRdaF[compRdaF$Score == "sites",], fbomBrda$stream)
+names(combRdaSites)[9] <- "stream"
+
+combRdaSp <-  compRdaF[compRdaF$Score == "species",] %>% 
+  mutate(Label = fct_recode(Label, "C:N" = "CNafdm",
+                            "C:P" = "CPafdm",
+                            "N:P" = "NPafdm",
+                            "%OM" = "perOM",
+                            "%C" = "perCafdm",
+                            "%N" = "perNafdm",
+                            "%P" = "perPafdm",
+                            "Bac/AFDM" = "numPerGafdm",
+                            "%<53um" = "perL53_afdm",
+                            "micC/AFDM" = "mgCgAFDM",
+                            "micN/AFDM" = "mgNgAFDM"))
+combRdaBP <-  compRdaF[compRdaF$Score == "biplot",]
+```
+
+
+## Areal fluxes
+
+### RDA
+
+
+get data together
+```{r}
+RDABulkVars3 <- c( "stream", 
+                   "logWA",
+                   # "BacPerM2", 
+                   # "gAFDMm2",  # "gCm2", "gNm2", "gPm2",  "gDMm2S", # Stocks,
+                   "microN_m2",
+                   # "mgNgAFDM",
+                   #"ugU_cell_h_N", "R_cell_h",# "ugU_cell_h_P"  #cellular fluxes
+                   #"ugU_mgAFDM_h_N", "R_mgDOmgAFDMh_mean" #,  "ugU_mgAFDM_h_P" # mass specific fluxes
+                   "ugU_micN_h_N" ,  "R_micN_h" #
+)
+
+RDAEcosysVars2 <-  c("ugU_m2_h_N", "ugU_m2_h_P", "R_mgDOm2perH") #Areal fluxes)
+
+fbomBEcoRda2 <- fbomB %>% 
+  select(all_of(RDABulkVars3), all_of(RDAEcosysVars2)) %>% 
+  filter(complete.cases(.)) %>% 
+  mutate_at(vars(microN_m2:R_mgDOm2perH), funs(scale))
+
+fbomBEcoRdaPred2 <- fbomBEcoRda2 %>%
+  select(all_of(RDABulkVars3), -stream) #
+
+fbomBEcoRdaComm2 <- fbomBEcoRda2 %>%
+  select(all_of(RDAEcosysVars2))
+```
+
+
+Forward/backward RDA
+```{r}
+
+EcoRda2F0 <- rda(fbomBEcoRdaComm2 ~ 1, fbomBEcoRdaPred2)
+
+EcoRda2F <- rda(fbomBEcoRdaComm2 ~ ., fbomBEcoRdaPred2)
+
+EcoRdaStep2 <- step(EcoRda2F0, scope = formula(EcoRda2F), test = "perm")
+```
+
+
+Most likely model
+```{r}
+EcoRda2Fa <- rda(fbomBEcoRdaComm2 ~ microN_m2 + ugU_micN_h_N + R_micN_h, fbomBEcoRdaPred2)
+EcoRda2Fa
+```
+
+No issues with variance inflation 
+```{r}
+vif.cca(EcoRda2Fa)
+```
+
+
+```{r}
+TableS4vars <- fbomB %>% 
+    select(all_of(RDABulkVars3), all_of(RDAEcosysVars2), ugU_mgAFDM_h_P, -stream) %>% 
+    filter(complete.cases(.)) %>% 
+    mutate_at(vars(microN_m2:R_mgDOm2perH), funs(scale))
+```
+
+
+```{r}
+  AfluxRDAAxesCors <- cor(TableS4vars, scores(EcoRda2Fa, dis = "si", choices = 1:2), method = "spearman")
+  round(AfluxRDAAxesCors,2)
+```
+
+```{r}
+vif.cca(EcoRda2Fa)
+```
+
+Function spenvcor finds the so-called “species – environment correlation” or (weighted) correlation of weighted average scores and linear combination scores. This is a bad measure of goodness of ordination, because it is sensitive to extreme scores (like correlations are), and very sensitive to overfitting or using too many constraints. Better models often have poorer correlations. Function ordispider can show the same graphically.
+```{r}
+spenvcor(EcoRda2Fa)
+```
+
+```{r}
+intersetcor(EcoRda2Fa)
+```
+
+```{r}
+cor(model.frame(EcoRda2Fa))
+```
+
+Function goodness gives cumulative proportion of inertia accounted by species up to chosen axes. The proportions can be assessed either by species or by sites depending on the argument display, but species are not available in distance-based dbrda. The function is not implemented for capscale.
+```{r}
+goodness(EcoRda2Fa)
+```
+
+```{r}
+intersetcor(EcoRda2Fa)
+```
+
+
+```{r}
+anova(EcoRda2Fa)
+```
+
+```{r}
+anova(EcoRda2Fa, by = "terms")
+```
+
+```{r}
+anova(EcoRda2Fa, by = "axis")
+```
+
+Prepare data for plot
+```{r}
+EcoRdaMF2 <- fortify(EcoRda2Fa, scaling = 1, axes = 1:3)
+
+EcoRdaMFSites2 <- cbind(EcoRdaMF2[EcoRdaMF2$Score == "sites",], fbomBEcoRda2$stream)
+names(EcoRdaMFSites2)[6] <- "Stream"
+
+EcoRdaMFSp2 <-  EcoRdaMF2[EcoRdaMF2$Score == "species",] %>% 
+  mutate(Label = fct_recode(Label, 
+                            "Nup/m2" = "ugU_m2_h_N",
+                            "Pup/m2" = "ugU_m2_h_P",
+                            "R/m2" = "R_mgDOm2perH"))
+
+
+
+EcoRdaMFBP2 <-  EcoRdaMF2[EcoRdaMF2$Score == "biplot",] %>% 
+  mutate(Label = fct_recode(Label, 
+                            # "logWA" = "logWA",
+                            # "Bac/m2" = "BacPerM2",
+                            "micN/m2" = "microN_m2",
+                            # "gAFDM/m2" = "gAFDMm2",
+                            "Nup/biomass" = "ugU_micN_h_N",
+                            "R/biomass" = "R_micN_h"))
+```
+
+
+### Table S6
+```{r}
+rcorr(as.matrix(cbind(fbomBEcoRdaComm2, fbomBEcoRdaPred2, scores(EcoRda2Fa, dis = "si", choices = 1:3))), type = c("spearman"))
+TableS6m <- rcorr(as.matrix(cbind(fbomBEcoRdaComm2, 
+                      fbomBEcoRdaPred2, 
+                      scores(EcoRda2Fa, dis = "si", choices = 1:2))))
+TableS6 <- as.data.frame(TableS6m$r)
+```
+
+```{r include = FALSE}
+readr::write_csv(TableS6, file.path(here::here("04_tables"), "TableS6.csv"))
+```
+
+## Ms-rates
+
+### RDA
+get data together
+```{r}
+#based on 2A
+RDABulkVars4 <- c( "stream", 
+                   "logWA", #"CNafdm",  #RDA1
+                  #"del13C", "del15N",
+                  "perPafdm",#"numPerGafdm", #"perL53_afdm",#    #top left
+                  #"perOM", "CPafdm", # bottom right
+                  "perCafdm",  "perNafdm",# "mgCgAFDM", "mgNgAFDM",#bottom left
+                    "NPafdm", 
+                  "RDA1", "PC1"
+                  )
+
+RDAEcosysVars4 <-  c("ugU_mgAFDM_h_N", "ugU_mgAFDM_h_P", "R_mgDOmgAFDMh_mean",
+                     "ugU_micN_h_N", "ugU_micN_h_P", "R_micN_h") #cellular fluxes
+
+# This is from the bulk FBOM composition RDA
+combRdaSitesF <- cbind(compRdaF[compRdaF$Score == "sites",], fbomBrda)
+
+fbomBEcoRda4 <- fbomB %>% 
+  left_join(combRdaSitesF %>% 
+              select(stream, pool, RDA1:PC1), by = c("stream", "pool")) %>% 
+  select(stream, all_of(RDAEcosysVars4), RDA1:PC1) %>% 
+  filter(complete.cases(.)) %>% 
+  slice(-14) %>% #this was a big outlier
+  mutate_at(vars(all_of(RDAEcosysVars4)), funs(scale)) #needs to change every time RDABulkVArs changes
+
+
+fbomBEcoRdaPred4 <- fbomBEcoRda4 %>%
+  select(RDA1, PC1) #
+
+fbomBEcoRdaComm4 <- fbomBEcoRda4 %>%
+  select(all_of(RDAEcosysVars4))
+```
+
+Backward/forward
+```{r}
+
+msFluxRDA0 <- rda(fbomBEcoRdaComm4 ~ 1, fbomBEcoRdaPred4)
+
+msFluxRDAF <- rda(fbomBEcoRdaComm4 ~ ., fbomBEcoRdaPred4)
+
+msFluxRDAStep2 <- step(msFluxRDA0, scope = formula(msFluxRDAF), test = "perm", direction = "forward")
+```
+
+Best model is RDA1 + PC1, but that results in a model with an RDA2 which has a P > 0.9. Makes no senese.
+```{r}
+#this is the axis from the Bulk RDA - just easier to put together.
+msFluxRDA.A <- rda(fbomBEcoRdaComm4 ~ RDA1 , data =  fbomBEcoRdaPred4)
+msFluxRDA.B <- rda(fbomBEcoRdaComm4 ~ PC1 , data =  fbomBEcoRdaPred4)
+msFluxRDA.C <- rda(fbomBEcoRdaComm4 ~ RDA1 + PC1, data =  fbomBEcoRdaPred4)
+msFluxRDA.D <- rda(fbomBEcoRdaComm4 ~ RDA1 * PC1, data =  fbomBEcoRdaPred4)
+
+anova(msFluxRDA.A, msFluxRDA.C)  #P < 0.001
+anova(msFluxRDA.C, msFluxRDA.D) # no improvement
+extractAIC(msFluxRDA.A)
+extractAIC(msFluxRDA.B)
+extractAIC(msFluxRDA.C)
+extractAIC(msFluxRDA.D)
+```
+
+Best model
+```{r}
+msFluxRDA <- rda(fbomBEcoRdaComm4 ~ RDA1 + PC1, data =  fbomBEcoRdaPred4)
+```
+
+
+```{r}
+anova(msFluxRDA)
+```
+
+
+```{r}
+anova(msFluxRDA, by = "terms", permutations = 5000) # p-value was unreliable at default perm
+```
+
+```{r}
+anova(msFluxRDA, by = "axis")
+```
+
+```{r}
+goodness(msFluxRDA)
+```
+
+```{r}
+msFluxRDAdat <- cor(fbomBEcoRdaComm4, scores(msFluxRDA, dis = "si", choices = 1:3)); msFluxRDAdat
+```
+
+```{r}
+cor(fbomBEcoRda4[,-1], method = "spearman")
+```
+
+
+### data for plot
+```{r}
+fbomBEcoRda4a <- fbomBEcoRda4 %>% 
+  rename(bulkRDA1 = RDA1,
+         bulkPC1 = PC1)
+
+msFluxRDAdat <- cbind(fbomBEcoRda4a, scores(msFluxRDA, choices = c(1:2))$sites) #site scores
+
+
+msFluxRDAdatSpScores <- as.data.frame(scores(msFluxRDA, choices = c(1:2))$species) %>%  #species scores - the variables
+  mutate(species = rownames(.),
+    Label = fct_recode(species, 
+                            "Nup/AFDM" = "ugU_mgAFDM_h_N",
+                            "Pup/AFDM" = "ugU_mgAFDM_h_P",
+                            "R/AFDM" = "R_mgDOmgAFDMh_mean",
+                            "Nup/biomass" = "ugU_micN_h_N",
+                            "Pup/biomass" = "ugU_micN_h_P",
+                            "R/biomass" = "R_micN_h"))
+
+msFluxRDAbp <- fortify(msFluxRDA, axes = 1:2, display =  c("bp")) %>% 
+  mutate(Label = fct_recode(Label,
+                            "bulkRDA1" = "RDA1",
+                            "bulkPC1" = "PC1"))
+
+names(msFluxRDAdat)[8:11] <- c("bRDA1", "bPC1", "msRDA1", "msRDA2")
+```
+
+
+### Table S5
+```{r}
+TableS5m <- rcorr(as.matrix(cbind(fbomBEcoRdaComm4, 
+                      fbomBEcoRdaPred4, 
+                      scores(msFluxRDA, dis = "si", choices = 1:2))),
+      type = c("spearman"))
+
+TableS5 <- as.data.frame(TableS5m$r)
+```
+
+```{r include = FALSE}
+readr::write_csv(TableS5, file.path(here::here("04_tables"), "Table5.csv"))
+```
+
+
+### Corrs in Fig 3C
+```{r}
+rcorr(as.matrix(cbind(fbomBrda[,-c(1,3)], scores(compRda, dis = "si", choices = 1:2))), type = c("spearman"))
+```
+
+```{r eval=FALSE, include=FALSE}
+RDABulkVars2 <- c( "stream", "logWA",
+                  #"del13C", "del15N",
+                  "perOM", "perCafdm", "perNafdm", "perPafdm",
+                  "CNafdm", "CPafdm", "NPafdm",
+                  "numPerGafdm", "mgCgAFDM", "mgNgAFDM",
+                  "perL53_afdm")
+
+RDAEcosysVars <-  c("gAFDMm2", "BacPerM2", # "gCm2", "gNm2", "gPm2",  "gDMm2S", # Stocks
+                    #"ugU_cell_h_N", "ugU_cell_h_P", "R_cell_h", #cellular fluxes; cor w/ N/mg (0.8), P/mg (0.8), R/mg (0.6)
+                    "ugU_mgAFDM_h_N", "ugU_mgAFDM_h_P", "R_mgDOmgAFDMh_mean", # mass specific fluxes
+                    "ugU_m2_h_N", "ugU_m2_h_P", "R_mgDOm2perH") #Areal fluxes)
+
+
+fbomBEcoRda <- fbomB %>% 
+  select(all_of(RDABulkVars2), all_of(RDAEcosysVars)) %>% 
+  filter(complete.cases(.)) %>% 
+  mutate_at(vars(perOM:R_mgDOm2perH), funs(scale))
+
+fbomBEcoRdaPred <- fbomBEcoRda %>%
+  select(all_of(RDABulkVars2), -stream) #
+
+fbomBEcoRdaComm <- fbomBEcoRda %>%
+  select(all_of(RDAEcosysVars))
+```
+
+```{r}
+FpomBulkCompCorrF3C <- round(cor(
+                              as.data.frame(cbind(fbomBrda,scores(compRda, dis = "si", choices = 1:2)))%>% 
+                                select(all_of(RDABulkVars2), RDA1, PC1,  -stream, -pool) %>% 
+                                rename("WA" = "logWA",
+                                       "%OM" = "perOM",
+                                       "%P" = "perPafdm",
+                                       "%N" = "perNafdm",
+                                       "C:P" = "CPafdm",
+                                       "C:N" = "CNafdm",
+                                       "Bac/afdm" = "numPerGafdm",
+                                       "MicN/afdm" = "mgNgAFDM",
+                                        "%<53µm" = "perL53_afdm",
+                                       "bulkRDA1" = "RDA1") %>% 
+                                #this determines order
+                                select("bulkRDA1","%OM", "C:P", "C:N",
+                                       "MicN/afdm", "%<53µm","%N", "Bac/afdm", "WA", "%P","perCafdm", "NPafdm","PC1",
+                                       # just an extra row for clipping
+                                       "perCafdm") %>% 
+                                filter(complete.cases(.)), method = "spearman"),1)
+
+
+ggcorrplot(FpomBulkCompCorrF3C, type = "lower", lab = TRUE, colors = c("magenta4", "white", "darkorange"),
+           outline.color = "white", hc.order = FALSE, show.diag = TRUE, lab_col = "white", lab_size = 5) +
+  theme(panel.background = element_rect(fill = "grey", color = "black", size = 1.5),
+        axis.text = element_text(color = "black"),
+        panel.grid.major = element_blank())
+```
+
+## Longitudinal patterns
+http://r4stats.com/2017/04/18/group-by-modeling-in-r-made-easy/
+https://r4ds.had.co.nz/many-models.html
+https://exeter-data-analytics.github.io/StatModelling/mixed-effects-models.html
+https://glennwilliams.me/r4psych/mixed-effects-models.html
+
+Get data together
+```{r}
+# this is a little convoluted because old version ln transformed responses. This version log10 transforms
+fbomBlong <- fbomB %>% 
+  select(stream, pool, logWA, BacPerM2, microN_m2,
+                              ugU_m2_h_N:R_mgDOm2perH,
+                              ugU_micN_h_N:R_micN_h,
+                              ugU_mgAFDM_h_N:R_mgDOmgAFDMh_mean,microC_m2) %>% 
+  mutate_at(vars(BacPerM2:R_mgDOmgAFDMh_mean,microC_m2), list(~10^(.))) %>% 
+  mutate(WA = 10^logWA) %>% 
+  mutate(BilBacPerM2 = BacPerM2/1000000000) %>% 
+  select(-BacPerM2, -logWA) %>% 
+  mutate_at(vars(c(microN_m2:BilBacPerM2,microC_m2)), list(~log10(.))) %>% #params and WA log10
+  pivot_longer(cols = c(microN_m2:R_mgDOmgAFDMh_mean, BilBacPerM2,microC_m2), names_to = "param", values_to = "value") %>% 
+  mutate(param = as.factor(param))
+```
+
+
+### Effect sizes
+```{r}
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "microN_m2") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+121/6.24
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "microC_m2") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+848/40.3
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "ugU_micN_h_N") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+
+# fold increase
+31.2/2.74
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "ugU_m2_h_N") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+
+# fold increase
+2687/40.1
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "ugU_m2_h_P") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+
+# fold increase
+560/44.5
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "R_mgDOm2perH") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+
+# fold increase
+31.2/2.74
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "BilBacPerM2") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+
+# fold increase
+10.8/1.69
+
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "ugU_mgAFDM_h_N") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+
+# fold increase
+0.249/0.0074
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "ugU_mgAFDM_h_P") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+0.0391/0.00215
+
+fbomBlong %>% 
+  group_by(stream) %>% 
+  filter(param == "R_mgDOmgAFDMh_mean") %>% 
+  dplyr::summarize(value = 10^mean(value, na.rm = TRUE)) #back transform
+0.00133/0.0000851
+
+```
+
+
+Function for GAM
+
+Function for LME
+```{r}
+LongLMEFun <- function(df){
+  lmer(value ~ WA + (1|stream), data = df)
+}
+```
+
+
+Function for predicting WA spline
+```{r}
+LongLMEPredFun = function(modLME){
+  WA <- seq(-0.24,2.18, length = 46)
+  stream <- rep("MKLY", times = 46)
+  predDat <- as.data.frame(cbind(WA, stream)) %>%
+              mutate(stream = as.factor(stream),
+                     WA = as.numeric(WA))
+  predDat$LmePred <- predict(modLME, predDat)
+  predDat
+  }
+```
+
+
+Build  models, get summary, make predictions for WA spline
+```{r}
+fbomBlongGam <- fbomBlong %>%
+  group_by(param) %>%
+  nest() %>%
+  mutate(
+        LmeModel = map(data, LongLMEFun),
+        LmeModelSum = map(LmeModel, ~summary(.x)),
+        LmeR2 = map(LmeModel, r.squaredGLMM),
+        LmeAnova = map(LmeModel, Anova),
+        LmePred = map(LmeModel, LongLMEPredFun),
+        LmeModelSum2 = map(LmeModel, ~tidy(.x, effects = "fixed")))
+```
+
+## Seston ~ WA
+```{r}
+	 ses2008 <- ses %>% 
+	   filter(Y == "2008")
+```
+
+
+### C:N
+```{r}
+summary(lm(C_N ~ logWA, ses2008))	 
+```
+
+```{r}
+sesP1lab <- "atop(R^2==0.63,P < 0.001)"
+```
+
+
+
+### Chl a
+```{r}
+sesChla <- ses %>% 
+  mutate(Pdt = as.POSIXct(Pdt, format = "%Y-%m-%d"),
+    M = as.numeric(strftime(Pdt, format = "%m"))) %>% 
+  filter(M >= 8 & M <= 9) %>% 
+  filter(logChla > -2.5)
+```
+
+
+```{r}
+summary(lm(logChla ~ logWA, sesChla))	
+```
+
+
+```{r}
+sesP2lab <- "atop(R^2==0.76,P < 0.001)"
+```
+
+
+### del13C
+```{r}
+summary(lm(d13C ~ logWA, ses2008))
+```
+
+
+### del15N
+```{r}
+summary(lm(d15N ~ logWA, ses2008))
+```
+
+```{r}
+sesP4lab <- "atop(R^2==0.48,P==0.004)"
+```
+
+
+
+# Figures
+
+Make tibble for ploting - but plotting LME now
+```{r}
+fbomBlongGamFig <- fbomBlongGam %>%
+  unnest(c(data, LmePred, LmeAnova), names_sep = ".") %>% 
+  rename("pval" ="LmeAnova.Pr(>Chisq)") %>% 
+  mutate(LineSig = as.factor(ifelse(pval > 0.1,"NS", "S")))
+```
+  
+
+## Fig 2 & S4 | stocks
+
+### Fig2 | stocks
+
+#### Fig2a
+```{r eval=FALSE, include=FALSE}
+Fig2a <- ggplot(fbomB, aes(y = 10^(gAFDMm2), x = 10^logWA, fill = stream)) +
+  geom_point(shape = 22, size = 6) +
+  scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+  xlab(NULL) +
+  ylab(expression(paste("FBOM stock (g AFDM ",m^-2,")"))) +
+  scale_x_log10() +
+  scale_y_log10() +
+  xlab(expression(paste("Watershed area (", km^2,")"))) +
+  # scale_x_continuous(limits = c(-0.5, 2.5), breaks = c(-0.5, 0.5,  1.5,  2.5)) +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 24),
+        axis.text = element_text(size = 20),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position="top",
+        legend.justification = c(0.5,1),
+        legend.text = element_text(size = 17),
+        legend.title = element_blank(),
+        legend.key = element_rect(fill = "transparent"),
+        legend.background = element_rect(fill = "grey90", color = "black")) +
+  annotate("text", x = 0.6, y = 115, label = "A)", size = 10) +
+  annotate("text", x = 10, y = 2, 
+           label = paste0("P = 0.520;"),
+           size = 7) +
+  annotate("text", x = 40, y = 2.1, 
+           label = paste("R^2 == ", "0.16"), parse = TRUE,
+           size = 7, fontface = "bold")  +
+  guides(fill = guide_legend(nrow = 1))
+```
+
+### Fig S4 size fractions
+
+```{r}
+fbomScompFig2 <- fbomScomp %>% 
+  filter(perL53_afdm > 0.35) %>% 
+  select(stream, pool, logWA, perL53_afdm, perG53_afdm, perG106_afdm, perG250_afdm) %>% 
+  gather(key = FPOMsize, value = percent, -stream, -pool, -logWA)%>%
+  ungroup() %>% 
+  mutate(FPOMsizeN = as.numeric(ifelse(FPOMsize == "perL53_afdm", "4",
+                                       ifelse(FPOMsize == "perG53_afdm", "3",
+                                              ifelse(FPOMsize == "perG106_afdm", "2",
+                                                     ifelse(FPOMsize == "perG250_afdm", "1","0"))))),
+         FPOMsize = fct_relevel(as.factor(FPOMsize), "perL53_afdm", "perG53_afdm", "perG106_afdm", "perG250_afdm"),
+         stream = fct_recode(stream, c("SFGB" = "SF")))
+```
+
+
+Line fits
+```{r eval=FALSE, include=FALSE}
+logWAseq <- seq(-0.25, 2.5, length = 100)
+fitL53 = 0.64738 + 0.10673*logWAseq
+fitG53 = 0.12375 + -0.04217*logWAseq 
+fitG106 = 0.18928 + -0.07160*logWAseq 
+Fig2bFitDF <- as.data.frame(cbind(logWAseq, fitL53, fitG53, fitG106))
+```
+
+
+```{r eval=FALSE, include=FALSE}
+FigS4 <-ggplot() +
+  geom_line(data = Fig2bFitDF, aes(y = fitL53*100, x = 10^logWAseq), size = 1, linetype = "dotted") +
+  geom_line(data = Fig2bFitDF, aes(y = fitG53*100, x = 10^logWAseq), size = 1, linetype = "dashed") +
+  geom_line(data = Fig2bFitDF, aes(y = fitG106*100, x = 10^logWAseq), size = 1) +
+  geom_point(data = fbomScompFig2, aes(y = percent*100, x = 10^logWA + FPOMsizeN*10^logWA*0.2, fill = stream, 
+                                       size = FPOMsize), shape = 21, alpha = 0.7) +
+   scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+   scale_size_manual(values = c(2,3,5,7), labels = c("< 53 µm", "53-106 µm", "106-250 µm", "> 250 µm")) +
+               # scale_size_manual(values = c(7,5,4,3), labels = c("< 53 µm", "53-106 µm", "106-250 µm", "> 250 µm")) +
+  # scale_x_continuous(limits = c(-0.5, 2.5), breaks = c(-0.5,0.5, 1.5, 2.5)) +
+  scale_x_log10()+
+  scale_y_continuous(limits = c(0, 120), breaks = c(0, 25, 50, 75, 100)) +
+  xlab(expression(paste("Watershed area (", km^2, ")"))) +
+  ylab("Percent of bulk FBOM") +
+               # ylim(0,1.1) +
+  theme(axis.title = element_text(size = 22),
+         axis.text = element_text(size = 14),
+         # panel.grid = element_blank(),
+         panel.grid.major = element_line(color = "grey85", size = 0.5),
+         panel.border = element_rect(color = "black", size = 1.5, fill = "transparent"),
+                     panel.background = element_rect(fill = "white"),
+                     legend.title = element_blank(),
+                     legend.key = element_rect(fill = "transparent"),
+                     legend.position = c(0.6,0.91),
+                     legend.direction = "horizontal",
+                     legend.box = "horizontal",
+                     legend.background = element_rect(fill = "white", color = "black"),
+                     legend.margin = margin(0.05,0.05,0.05,0.05, unit = "cm"))+
+  # annotate("text", x = -0.5, y = 117.5, label = "B)", fontface = "bold", size = 7)  +
+  guides(size = guide_legend(nrow = 2, byrow = TRUE, title.hjust = 90))+
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 5)))
+
+```
+
+
+#### Fig S4
+```{r include = FALSE}
+pdf(file.path(here::here("03_plots"), "FigS4.pdf"), height = 6, width = 7)
+FigS4
+dev.off()
+```
+
+
+
+### Fig 2BC & S3
+
+```{r}
+stocks <- c("microC_m2", "microN_m2", "BilBacPerM2")
+fbomBStockFigs <- fbomBlongGamFig %>% 
+  filter(param %in% stocks) %>% 
+  group_by(param) %>% 
+  nest() %>% 
+  mutate(plot = map2(data, param,  
+                     ~ggplot() +
+                       geom_point(data = .x, aes(y = 10^data.value, x = 10^data.WA, fill = data.stream), size = 6, shape = 22) +
+                       geom_line(data = .x, aes(y = 10^LmePred.LmePred, x = 10^LmePred.WA, linetype = LineSig))+
+                       scale_linetype_manual(values = c("solid", "dashed")) +
+                      scale_x_log10()+
+                      scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+                      ylab(param) +
+                      xlab(expression(paste("Watershed area (", km^2,")"))) +
+                      theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+                              axis.title = element_text(size = 24),
+                              axis.text = element_text(size = 20),
+                              panel.grid.major = element_blank(),
+                              panel.grid.minor = element_blank(),
+                              legend.justification = c(0,1),
+                              legend.position = "none",
+                              legend.text = element_text(size = 12),
+                              legend.title = element_blank(),
+                              legend.key = element_rect(fill = "transparent"))
+                       ))
+```
+
+
+
+```{r}
+P.Stock.Bac <- fbomBStockFigs$plot[[2]] +
+  ylab(expression(paste("Bacterial density (", 10^9," ", m^-2,")"))) +
+  scale_y_log10(limits = c(0.500,35.000)) +
+  annotate("text", x = 16, y = 0.500, 
+           label = paste0("P = ",
+                         ifelse(round(fbomBlongGam$LmeAnova[[11]][1,3],3) < 0.001, 
+                                "< 0.001",round(fbomBlongGam$LmeAnova[[11]][1,3],3)), ";"),
+           size = 7) +
+  annotate("text", x = 80, y = 0.510, 
+         label = paste("R^2 == ",
+                       round(fbomBlongGam$LmeR2[[11]][1,1][[1]],3)), parse = TRUE,
+         size = 7, fontface = "bold") +
+  annotate("text", x = 0.6, y = 30, label = "C)", size = 10)
+
+P.Stock.micN <- fbomBStockFigs$plot[[1]] +
+  ylab(expression(paste("Microbial biomass (mg N ",m^-2,")"))) +
+  scale_y_log10() +
+  annotate("text", x = 20, y = 0.5, 
+           label = paste0("P = ",
+                         ifelse(round(fbomBlongGam$LmeAnova[[1]][1,3],3) < 0.001, 
+                                "< 0.001",round(fbomBlongGam$LmeAnova[[1]][1,3],3)), ";"),
+           size = 7) +
+  annotate("text", x = 73, y = 0.53, 
+         label = paste("R^2 == ",
+                       round(fbomBlongGam$LmeR2[[1]][1,1][[1]],3)), parse = TRUE,
+         size = 7, fontface = "bold")+
+  annotate("text", x = 0.6, y = 400, label = "B)", size = 10) 
+
+P.Stock.micC <- fbomBStockFigs$plot[[3]] +
+  ylab(expression(paste("Microbial biomass (mg C ",m^-2,")"))) +
+  scale_y_log10() +
+  annotate("text", x = 22, y = 10, 
+           label = paste0("P = ",
+                         ifelse(round(fbomBlongGam$LmeAnova[[10]][1,3],3) < 0.001, 
+                                "< 0.001",round(fbomBlongGam$LmeAnova[[10]][1,3],3)), ";"),
+           size = 7) +
+  annotate("text", x = 80, y = 10.3, 
+         label = paste("R^2 == ",
+                       round(fbomBlongGam$LmeR2[[10]][1,1][[1]],3)), parse = TRUE,
+         size = 7, fontface = "bold") +
+  guides(linetype = FALSE) +
+  theme(legend.position="top",
+        legend.box= "horizontal",
+        legend.justification = c(0.5,1),
+        legend.text = element_text(size = 19),
+        legend.title = element_blank(),
+        legend.key = element_rect(fill = "transparent"),
+        legend.background = element_rect(fill = "grey90", color = "black"))+ 
+  guides(fill = guide_legend(nrow = 1))
+  # annotate("text", x = 0.6, y = 6000, label = "B)", size = 10)
+```
+
+#### Print Fig 2
+```{r eval=FALSE, include=FALSE}
+# tiff("02_plots/Fig2.tiff", height = 25, width = 15, units = 'cm', compression = "lzw", res = 400)
+pdf(file.path(here::here("03_plots"), "Fig2.pdf"), height = 15, width =7)
+ggarrange(Fig2a, P.Stock.micN, P.Stock.Bac, nrow = 3, ncol = 1)
+dev.off()
+```
+
+#### Print Fig S3
+```{r eval=FALSE, include=FALSE}
+pdf(file.path(here::here("03_plots"), "FigS3.pdf"), height = 6, width = 7)
+P.Stock.micC
+dev.off()
+```
+
+## Fig 6 areal fluxes
+```{r}
+Fluxes <- c("R_mgDOm2perH", "ugU_m2_h_N", "ugU_m2_h_P")
+fbomBFluxFigs <- fbomBlongGamFig %>% 
+  filter(param %in% Fluxes) %>% 
+  group_by(param) %>% 
+  nest() %>% 
+  mutate(plot = map2(data, param,  
+                     ~ggplot() +
+                       geom_point(data = .x, aes(y = 10^data.value, x = 10^data.WA, fill = data.stream), size = 6, shape = 24) +
+                       geom_line(data = .x, aes(y = 10^LmePred.LmePred, x = 10^LmePred.WA, linetype = LineSig))+
+                       scale_linetype_manual(values = c("solid", "dashed")) +
+                      scale_x_log10(labels = scales::label_comma(accuracy = 1))+
+                      scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+                      ylab(param) +
+                      xlab(expression(paste("Watershed area (", km^2,")"))) +
+                      theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+                              axis.title = element_text(size = 24),
+                              axis.text = element_text(size = 20),
+                              panel.grid.major = element_blank(),
+                              panel.grid.minor = element_blank(),
+                              legend.justification = c(0,1),
+                              legend.position = "none",
+                              legend.text = element_text(size = 12),
+                              legend.title = element_blank(),
+                              legend.key = element_rect(fill = "transparent"))
+                       ))
+```
+
+```{r}
+P.Eco.Nup <- fbomBFluxFigs$plot[[1]] +
+  ylab(expression(atop(textstyle("Areal N uptake"), paste("(µg N ", m^-2," ", h^-1,")")))) +
+   scale_y_log10(labels = scales::label_comma(accuracy = 1)) +
+  theme(legend.position = c(0.1,1),
+        legend.background = element_rect(fill = "transparent"),
+        legend.text = element_text(size = 19)) +
+  annotate("text", x = 19, y = 10^1.09, 
+           label = paste0("P = ",
+                         ifelse(round(fbomBlongGam$LmeAnova[[2]][1,3],3)  < 0.001, 
+                                "< 0.001",round(fbomBlongGam$LmeAnova[[2]][1,3],3)), ";"),
+           size = 7) +
+  annotate("text", x = 83, y = 10^1.12, 
+         label = paste("R^2 == ",
+                       round(fbomBlongGam$LmeR2[[2]][1,1][[1]],3)), parse = TRUE,
+         size = 7, fontface = "bold")+
+  annotate("text", x = 0.6, y = 9000, label = "A)", size = 10) +
+  guides(linetype = FALSE)
+
+P.Eco.Pup <- fbomBFluxFigs$plot[[2]] +
+  ylab(expression(atop(textstyle("Areal P uptake"), paste("(µg P ", m^-2," ", h^-1,")")))) +
+    scale_y_log10(labels = scales::label_comma(accuracy = 1)) +
+  annotate("text", x = 19, y = 0.4, 
+           label = paste0("P = ",
+                         ifelse(round(fbomBlongGam$LmeAnova[[3]][1,3],3) < 0.001, 
+                                "< 0.001",round(fbomBlongGam$LmeAnova[[3]][1,3],3)), ";"),
+           size = 7) +
+  annotate("text", x = 83, y = 0.43, 
+         label = paste("R^2 == ",
+                       round(fbomBlongGam$LmeR2[[3]][1,1][[1]],3)), parse = TRUE,
+         size = 7, fontface = "bold")+
+  annotate("text", x = 0.6, y = 1400, label = "B)", size = 10)
+
+
+P.Eco.R <- fbomBFluxFigs$plot[[3]] +
+  ylab(expression(atop(textstyle("Areal Respiration"), paste("(mg DO ", m^-2," ", h^-1,")")))) +
+    scale_y_log10(labels = scales::label_comma(accuracy = 1)) +
+  annotate("text", x = 22, y = 0.8, 
+           label = paste0("P = ",
+                         ifelse(round(fbomBlongGam$LmeAnova[[4]][1,3],3) < 0.001, 
+                                "< 0.001",round(fbomBlongGam$LmeAnova[[4]][1,3],3)), ";"),
+           size = 7) +
+  annotate("text", x = 80, y = 0.83, 
+         label = paste("R^2 == ",
+                       round(fbomBlongGam$LmeR2[[4]][1,1][[1]],3)), parse = TRUE,
+         size = 7, fontface = "bold")+
+  annotate("text", x = 0.6, y = 140, label = "C)", size = 10)
+```
+
+#### Print
+```{r eval=FALSE, include=FALSE}
+pdf(file.path(here::here("03_plots"), "Fig6.pdf"), height = 17, width = 7.75)
+grid.arrange(P.Eco.Nup, P.Eco.Pup,P.Eco.R, 
+             nrow = 3, ncol = 1)
+dev.off()
+```
+
+
+
+
+## Fig 5 | ms fluxes
+```{r}
+Rates <- c("ugU_mgAFDM_h_N", "ugU_mgAFDM_h_P",  "R_mgDOmgAFDMh_mean")
+fbomBRateFigsAFDM <- fbomBlongGamFig %>% 
+  filter(param %in% Rates) %>% 
+  group_by(param) %>% 
+  nest() %>% 
+  mutate(plot = map2(data, param,  
+                     ~ggplot() +
+                       geom_point(data = .x, aes(y = 10^data.value*1000, x = 10^data.WA, fill = data.stream), size = 8, shape = 23) +
+                       geom_line(data = .x, aes(y = 10^LmePred.LmePred*1000, x = 10^LmePred.WA, linetype = LineSig))+
+                       scale_linetype_manual(values = c("solid", "dashed")) +
+                      scale_x_log10()+
+                      scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+                      ylab(param) +
+                      xlab(expression(paste("Watershed area (", km^2,")"))) +
+                      theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+                              axis.title = element_text(size = 30),
+                              axis.text = element_text(size = 20),
+                              panel.grid.major = element_blank(),
+                              panel.grid.minor = element_blank(),
+                              legend.justification = c(0,1),
+                              legend.position = "none",
+                              legend.text = element_text(size = 12),
+                              legend.title = element_blank(),
+                              legend.key = element_rect(fill = "transparent"))
+                       ))
+```
+
+
+### Activity/AFDM
+```{r}
+P.Act.Nup.afdm <- fbomBRateFigsAFDM$plot[[1]] +
+  ylab(expression(atop("FBOM mass-specific N uptake", paste("(µg N g ", AFDM^-1," ", h^-1,")")))) +
+  scale_y_log10(labels = fancy_scientific) +
+  theme(legend.position = c(0.12,1),
+        legend.background = element_rect(fill = "transparent"),
+        legend.text = element_text(size = 22)) +
+  annotate("text", x = 15, y = 10^-2.6*1000, 
+           label = paste0("P = ",
+                          ifelse(round(fbomBlongGam$LmeAnova[[8]][1,3],3) < 0.001, 
+                                 "< 0.001",round(fbomBlongGam$LmeAnova[[8]][1,3],3)), ";"),
+           size = 9) +
+  annotate("text", x = 80, y = 10^-2.59*1000, 
+           label = paste("R^2 == ",
+                         round(fbomBlongGam$LmeR2[[8]][1,1][[1]],3)), parse = TRUE,
+           size = 9, fontface = "bold")+
+  annotate("text", x = 0.6, y = 0.5*1000, label = "A)", size = 12)+
+  guides(linetype = FALSE) 
+
+P.Act.Pup.afdm <- fbomBRateFigsAFDM$plot[[2]] +
+  ylab(expression(atop("FBOM mass-specific P uptake", paste("(µg P g ", AFDM^-1," ", h^-1,")")))) +
+  scale_y_log10(labels = fancy_scientific) +
+  annotate("text", x = 13, y = 10^-4*1000, 
+           label = paste0("P = ",
+                          ifelse(round(fbomBlongGam$LmeAnova[[9]][1,3],3) < 0.001, 
+                                 "< 0.001",round(fbomBlongGam$LmeAnova[[9]][1,3],3)), ";"),
+           size = 9) +
+  annotate("text", x = 75, y = 10^-3.98*1000, 
+           label = paste("R^2 == ",
+                         round(fbomBlongGam$LmeR2[[9]][1,1][[1]],3)), parse = TRUE,
+           size = 9, fontface = "bold")+
+  annotate("text", x = 0.6, y = 0.1*1000, label = "B)", size = 12)
+
+
+P.Act.R.afdm <- fbomBRateFigsAFDM$plot[[3]] +
+  ylab(expression(atop("FBOM mass-specific respiration", paste("(mg DO g ", AFDM^-1," ", h^-1,")")))) +
+  scale_y_log10(labels = fancy_scientific) +
+  annotate("text", x = 15, y = 10^-4.5*1000, 
+           label = paste0("P = ",
+                          ifelse(round(fbomBlongGam$LmeAnova[[10]][1,3],3) < 0.001, 
+                                 "< 0.001",round(fbomBlongGam$LmeAnova[[10]][1,3],3)), ";"),
+           size = 9) +
+  annotate("text", x = 65, y = 10^-4.49*1000, 
+           label = paste("R^2 == ",
+                         round(fbomBlongGam$LmeR2[[10]][1,1][[1]],3)), parse = TRUE,
+           size = 9, fontface = "bold")+
+  annotate("text", x = 0.6, y = 3e-3*1000, label = "C)", size = 12)
+```
+
+
+### Activity/mic N
+```{r}
+Rates <- c("ugU_micN_h_N", "ugU_micN_h_P", "R_micN_h")
+fbomBRateFigsMicN <- fbomBlongGamFig %>% 
+  filter(param %in% Rates) %>% 
+  group_by(param) %>% 
+  nest() %>% 
+  mutate(plot = map2(data, param,  
+                     ~ggplot() +
+                       geom_point(data = .x, aes(y = 10^data.value, x = 10^data.WA, fill = data.stream), size = 8, shape = 23) +
+                       # geom_line(data = .x, aes(y = 10^LmePred.LmePred, x = 10^LmePred.WA, linetype = LineSig))+
+                       scale_linetype_manual(values = c("solid", "dashed")) +
+                      scale_x_log10()+
+                      scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+                      ylab(param) +
+                      xlab(expression(paste("Watershed area (", km^2,")"))) +
+                      theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+                              axis.title = element_text(size = 30),
+                              axis.text = element_text(size = 20),
+                              panel.grid.major = element_blank(),
+                              panel.grid.minor = element_blank(),
+                              legend.justification = c(0,1),
+                              legend.position = "none",
+                              legend.text = element_text(size = 12),
+                              legend.title = element_blank(),
+                              legend.key = element_rect(fill = "transparent"))
+                       ))
+```
+
+```{r}
+# https://stackoverflow.com/questions/11610377/how-do-i-change-the-formatting-of-numbers-on-an-axis-with-ggplot
+fancy_scientific <- function(l) {
+     # turn in to character string in scientific notation
+     l <- format(l, scientific = TRUE)
+     # quote the part before the exponent to keep all the digits
+     l <- gsub("^(.*)e", "'\\1'e", l)
+     # turn the 'e+' into plotmath format
+     l <- gsub("e", "%*%10^", l)
+     # return this as an expression
+     parse(text=l)
+}
+```
+
+
+```{r}
+P.Act.Nup.N <- fbomBRateFigsMicN$plot[[1]] +
+  ylab(expression(atop("Biomass-specific N uptake", paste("(µg N mg microbial ",N^-1," ", h^-1,")")))) +
+  # scale_y_log10(labels = scales::label_comma()) +
+  scale_y_log10(labels = fancy_scientific) +
+  annotate("text", x = 15, y = 10^-1, 
+           label = paste0("P = ",
+                          ifelse(round(fbomBlongGam$LmeAnova[[5]][1,3],3) < 0.001, 
+                                 "< 0.001",round(fbomBlongGam$LmeAnova[[5]][1,3],3)), ";"),
+           size = 9) +
+  annotate("text", x = 70, y = 10^-0.98, 
+           label = paste("R^2 == ",
+                         round(fbomBlongGam$LmeR2[[5]][1,1][[1]],3)), parse = TRUE,
+           size = 9, fontface = "bold")+
+  annotate("text", x = 0.6, y = 1e3, label = "D)", size = 12)
+
+P.Act.Pup.N <- fbomBRateFigsMicN$plot[[2]] +
+  ylab(expression(atop("Biomass-specific P uptake", paste("(µg P mg microbial ",N^-1," ", h^-1,")")))) +
+  scale_y_log10(labels = fancy_scientific) +
+  annotate("text", x = 15, y = 10^-1.3, 
+           label = paste0("P = ",
+                          ifelse(round(fbomBlongGam$LmeAnova[[6]][1,3],3) < 0.001, 
+                                 "< 0.001",round(fbomBlongGam$LmeAnova[[6]][1,3],3)), ";"),
+           size = 9) +
+  annotate("text", x = 70, y = 10^-1.285, 
+           label = paste("R^2 == ",
+                         round(fbomBlongGam$LmeR2[[6]][1,1][[1]],3)), parse = TRUE,
+           size = 9, fontface = "bold")+
+  annotate("text", x = 0.6, y = 1e3, label = "E)", size = 12)
+
+
+P.Act.R.N <- fbomBRateFigsMicN$plot[[3]] +
+  ylab(expression(atop("Biomass-specific respiration", paste("(mg DO mg microbial ",N^-1," ", h^-1,")")))) +
+  scale_y_log10(labels = fancy_scientific) +
+  annotate("text", x = 15, y = 10^-2, 
+           label = paste0("P = ",
+                          ifelse(round(fbomBlongGam$LmeAnova[[7]][1,3],3) < 0.001, 
+                                 "< 0.001",round(fbomBlongGam$LmeAnova[[7]][1,3],3)), ";"),
+           size = 9) +
+  annotate("text", x = 70, y = 10^-1.98, 
+           label = paste("R^2 == ",
+                         round(fbomBlongGam$LmeR2[[7]][1,1][[1]],3)), parse = TRUE,
+           size = 9, fontface = "bold")+
+  annotate("text", x = 0.6, y = 50, label = "F)", size = 12)
+```
+
+### Print
+```{r eval=FALSE, include=FALSE}
+pdf(file.path(here::here("03_plots"), "Fig5.pdf"), height = 15, width = 27) #14/24 - 
+grid.arrange(P.Act.Nup.afdm, P.Act.Pup.afdm, P.Act.R.afdm,
+             P.Act.Nup.N, P.Act.Pup.N, P.Act.R.N,
+             nrow = 2, ncol = 3)
+dev.off()
+```
+
+
+## Fig3 | RDA biplots
+
+### Fig3a - bulk composition
+```{r eval=FALSE, include=FALSE}
+Fig3A <- ggplot() +
+  geom_hline(yintercept = 0, linetype = "dotted", size = 1, color = "grey") +
+  geom_vline(xintercept = 0, linetype = "dotted", size = 1, color = "grey") +
+  geom_point(data = combRdaSites %>% 
+               mutate(stream = fct_recode(stream, "SFGB" = "SF")),
+             aes(y = PC1, x = RDA1, fill = stream), shape = 22, size = 5, alpha = 70/100) +
+  # env
+  geom_segment(data = combRdaBP, aes(x = 0, xend = RDA1*2, y = 0, yend = 0), 
+               size =1, arrow = arrow(length = unit(0.2, "cm")), color = "forestgreen") +
+  geom_text_repel(data = combRdaBP, aes(y = 0, x = RDA1*2, label = Label), 
+                  fontface = "bold.italic", color = "forestgreen", size = 5) +
+  # species
+  geom_segment(data = combRdaSp, aes(x = 0, xend = RDA1 * 0.75, y = 0, yend = PC1 * 0.75), 
+               arrow = arrow(length = unit(0.2, "cm")), color = "black", size = 1.25) +
+  geom_text_repel(data = combRdaSp, aes(y = PC1 * 0.75, x = RDA1 * 0.75, label = Label),
+                  fontface = "bold", color = "black", size = 5) +
+  scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+  scale_x_continuous(breaks = c(-1.5,-0.75, 0, 0.75, 1.5), limits = c(-1.5,1.5)) +
+  scale_y_continuous(breaks = c(-2,-1,0,1,2), limits = c(-2,2)) +
+  ylab("Unconstrained axis 1 (22%)") +
+  xlab("RDA1 (46%, P = 0.001)") +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 16),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.justification = c(0,1),
+        legend.position = c(0.58,0.99),
+        legend.text = element_text(size = 14),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.title = element_blank(),
+        legend.key = element_rect(fill = "transparent")) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE, title.position = "top"))+
+  annotate("text", x = -1.5, y = 1.9, label = "A) Bulk fraction", size = 10, hjust = 0)
+```
+
+
+### Fig3b - size fractions
+
+```{r eval=FALSE, include=FALSE}
+Fig3B <-ggplot() +
+  geom_hline(yintercept = 0, linetype = "dotted", size = 1, color = "grey") +
+  geom_vline(xintercept = 0, linetype = "dotted", size = 1, color = "grey") +
+  geom_point(data = compSizeRdaSites2, aes(y = RDA2, x = RDA1, fill = Stream, size = Size), shape = 21, alpha = 70/100) +
+  geom_text_repel(data = compSizeRdaSp, aes(y = RDA2*0.3, x = RDA1*0.3, label = Label), 
+                  fontface = "bold", color = "black", size = 5, box.padding = 1, ) +
+  geom_segment(data = compSizeRdaSp, aes(x = 0, xend = RDA1*0.3, y = 0, yend = RDA2*0.3), 
+               arrow = arrow(length = unit(0.2, "cm")), color = "black", size = 1.25) +
+  geom_text_repel(data = compSizeRdaBP, aes(y = RDA2*2.85, x = RDA1*2.85, label = Label), 
+                  fontface = "bold.italic", color = "forestgreen", size = 5, box.padding = 1, nudge_x = 0.25) +
+  geom_segment(data = compSizeRdaBP, aes(x = 0, xend = RDA1*2.85, y = 0, yend = RDA2*2.85), 
+               size =1, arrow = arrow(length = unit(0.2, "cm")),  color = "forestgreen") +
+  scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red"), guide= FALSE) +
+  scale_size_manual(values = c(2,3,5,7), labels = c("< 53 µm","53-106 µm", "106-250 µm",  "> 250 µm")) +
+  scale_x_continuous(breaks = c(-1.5,-.75, 0, 0.75, 1.5), limits = c(-1.5, 1.5)) +
+  scale_y_continuous(breaks = c(-1.5,-.75, 0, 0.75, 1.5), limits = c(-1.5, 1.5)) +
+  ylab("RDA2 (18%, P = 0.001)") +
+  xlab("RDA1 (36%, P = 0.001)") +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 16),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.justification = c(0,1),
+        legend.position = c(0.56,0.99),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank(),
+        legend.key = element_rect(fill = "transparent", size = 3),
+        legend.box = "horizontal")+
+  guides(size = guide_legend(nrow = 2, byrow = TRUE, title.position = "top"))+
+  annotate("text", x = -1.5, y = 1.4, label = "B) Size fractions", size = 10, hjust = 0) 
+```
+
+### Fig3c - ms rates
+
+```{r eval=FALSE, include=FALSE}
+Fig3C <- ggplot() +
+  geom_hline(yintercept = 0, linetype = "dotted", size = 1, color = "grey") +
+  geom_vline(xintercept = 0, linetype = "dotted", size = 1, color = "grey") +
+  geom_point(data = msFluxRDAdat, aes(y = msRDA2, x = msRDA1, fill = stream), shape = 23, alpha = 70/100, size = 5) +
+  # env
+  geom_text_repel(data = msFluxRDAdatSpScores, aes(y = RDA2*2, x = RDA1*2, label = Label), 
+                  fontface = "bold.italic", color = "black", nudge_x = 0.25, size = 5) +
+  geom_segment(data = msFluxRDAdatSpScores, aes(x = 0, xend = RDA1*2, y = 0, yend = RDA2*2), size =1, 
+               arrow = arrow(length = unit(0.2, "cm")),  color = "black") +
+  geom_text_repel(data = msFluxRDAbp, aes(x = RDA1*2, y = RDA2*2, label = Label), 
+                  fontface = "bold", color = "forestgreen", box.padding = 1.5, size = 5) +
+  geom_segment(data = msFluxRDAbp, aes(x = 0, xend = RDA1*2, y = 0, yend = RDA2*2), 
+               arrow = arrow(length = unit(0.2, "cm")), color = "forestgreen",  size = 1.25) +
+  scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+  ylab("RDA2 (16%, P = 0.001)") +
+  xlab("RDA1 (40%, P = 0.001)") +
+  scale_x_continuous(breaks = c(-2.5, -1.25, 0, 1.25, 2.5), limits = c(-2.5, 2.5)) +
+  scale_y_continuous(breaks = c(-3.75, -2.5, -1.25, 0, 1.25, 2.5), limits = c(-4, 2.5)) +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 16),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.justification = c(0,1),
+        legend.position = "none",
+        legend.text = element_text(size = 12),
+        legend.title = element_blank(),
+        legend.key = element_rect(fill = "transparent")) +
+  annotate("text", x = -2.5, y = 2.4, label = "C) Activity rates", size = 10, hjust = 0) 
+```
+
+### Fig3d - areal rates
+This gets doctored in a powerpoint :(
+```{r eval=FALSE, include=FALSE}
+Fig3D <-ggplot() +
+  geom_hline(yintercept = 0, linetype = "dotted", size = 1, color = "grey") +
+  geom_vline(xintercept = 0, linetype = "dotted", size = 1, color = "grey") +
+  geom_point(data = EcoRdaMFSites2, aes(y = RDA2, x = RDA1, fill = Stream), shape = 24, alpha = 70/100, size = 5) +
+  # env
+  geom_text_repel(data = EcoRdaMFSp2, aes(y = RDA2*0.3, x = RDA1*0.3, label = Label),
+                  fontface = "bold", color = "black", box.padding = 1, size = 5, nudge_x = 0.75) +
+  geom_segment(data = EcoRdaMFSp2, aes(x = 0, xend = RDA1*0.3, y = 0, yend = RDA2*0.3), 
+               arrow = arrow(length = unit(0.2, "cm")), color = "black", size = 1.25) +
+  geom_text_repel(data = EcoRdaMFBP2, aes(y = RDA2*2, x = RDA1*2, label = Label), 
+                  fontface = "bold.italic", color = "forestgreen", box.padding = 1, size = 5, nudge_x = 0.75) +
+  geom_segment(data = EcoRdaMFBP2, aes(x = 0, xend = RDA1*2, y = 0, yend = RDA2*2), size =1, 
+               arrow = arrow(length = unit(0.2, "cm")),  color = "forestgreen") +
+  #sp
+  scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+  scale_x_continuous(breaks = c(-1, -0.5, 0, 0.5, 1), limits = c(-1, 1)) +
+  scale_y_continuous(breaks = c(-1, -0.5, 0, 0.5, 1), limits = c(-1, 1)) +
+  ylab("RDA2 (18%, P = 0.001)") +
+  xlab("RDA1 (66%, P = 0.001)") +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 22),
+        axis.text = element_text(size = 16),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.justification = c(0,1),
+        legend.position = "none",
+        legend.text = element_text(size = 12),
+        legend.title = element_blank(),
+        legend.key = element_rect(fill = "transparent")) +
+  annotate("text", x = -1, y = 1, label = "D) Areal uptake & respiration", size = 10, hjust = 0)
+
+```
+
+### Print
+```{r eval=FALSE, include=FALSE}
+pdf(file.path(here::here("03_plots"), "Fig3.pdf"), height = 12, width = 16)
+# tiff("02_plots/Fig3.tiff", height = 25, width = 30, units = 'cm', compression = "lzw", res = 400)
+ggarrange(Fig3A, Fig3B, Fig3C, Fig3D, nrow = 2, ncol = 2)
+dev.off()
+```
+
+
+## Fig4 | C and isos
+
+
+### Fig 4
+```{r eval=FALSE, include=FALSE}
+SizeIsoBiplotAESy <-  aes(x = del13C_mean, ymin = del15N_mean - del15N_sd, ymax = del15N_mean + del15N_sd)
+SizeIsoBiplotAESx <-  aes(y = del15N_mean, xmin = del13C_mean - del13C_sd, xmax = del13C_mean + del13C_sd)
+Fig4b <- ggplot() +
+  geom_errorbar(data = fbomSsum, SizeIsoBiplotAESy) +
+  geom_errorbarh(data = fbomSsum, SizeIsoBiplotAESx) +
+  geom_point(data = fbomSsum %>% 
+               ungroup() %>% 
+               mutate(stream = fct_recode(stream, c("SFGB" = "SF"))),
+             aes(y = del15N_mean, x = del13C_mean, fill = stream, size = size),shape = 21) +
+  scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+  # scale_fill_manual(values = c("black", "grey20", "grey40", "grey60", "grey80", "white")) +
+  scale_size_manual(values = c(2,3,5,7), labels = c("< 53 µm","53-106 µm", "106-250 µm",  "> 250 µm")) +
+  scale_x_continuous(limits = c(-30,-20), breaks = c(-30, -27.5, -25, -22.5, -20)) +
+  scale_y_continuous(limits = c(-1,4.2), breaks = c(-1,0,1,2,3,4)) +
+  ylab(expression(paste(delta^15,"N (‰)"))) +
+  xlab(expression(paste(delta^13,"C (‰)")))+
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 26),
+        axis.text = element_text(size = 14),
+        panel.grid = element_blank(),
+        # legend.justification = c(-0.025,1),
+        legend.justification = c(1,1),
+        legend.position = c(0.99,0.99),
+        legend.background = element_rect(fill = "white", color = "black"),
+        legend.text = element_text(size = 12),
+        legend.title = element_blank(),
+        legend.key = element_rect(fill = "transparent"),
+        legend.spacing.y = unit(0.1, "cm"),
+        legend.margin = margin(0.05,0.05,0.05,0.05, unit = "cm")) +
+  guides(size = guide_legend(nrow = 2, byrow = TRUE))+
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 5)))
+
+```
+
+
+### Print
+```{r eval=FALSE, include=FALSE}
+# tiff(file.path(here::here("03_plots"), "Fig4.tiff"), height = 12, width = 15, units = 'cm', compression = "lzw", res = 300)
+pdf(file.path(here::here("03_plots"), "Fig4.pdf"),height = 6.4, width = 8, encoding = "MacRoman")
+Fig4b
+dev.off()
+```
+
+
+## Fig S1 | Env corr
+```{r eval=FALSE, include=FALSE}
+envCorDat0 <- readr::read_csv(file.path(here::here("01_data"), "00_OthersCorrelationsTable.csv")) %>% 
+  # read.csv("00_OthersCorrelationsTable.csv") %>% 
+  filter(km2 < 150)
+  
+
+envCorDat <- envCorDat0 %>% 
+  mutate(logWA = log10(km2)) %>% 
+  mutate_at(vars(DOC:GPP), funs(log(.))) 
+
+```
+
+```{r eval=FALSE, include=FALSE}
+summary(envCorDat0)
+```
+
+
+```{r eval=FALSE, include=FALSE}
+EnvCor <- round(cor(envCorDat %>% 
+                   select("logWA","Temp", "Light" = "Lux", "DOC", "DON", "DIC", "SRP",
+                          "NO3", "DIN", "TDN", "TDP", "GPP", "FPOMchla"), 
+                   use = "pairwise.complete.obs", method = "spearman"),1)
+
+EnvCorPval <-  round(cor_pmat(envCorDat %>% 
+                    select("logWA","Temp", "Light" = "Lux", "DOC", "DON",
+                           "DIC", "SRP", "NO3", "DIN", "TDN", "TDP", "GPP", "FPOMchla"), 
+                    use = "pairwise.complete.obs", method = "spearman"),3)
+
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# tiff(file.path(here::here("02_plots"), "FigS1.tiff"), height = 15, width = 20, units = 'cm', compression = "lzw", res = 400)
+pdf(file.path(here::here("03_plots"), "FigS1.pdf"), width = 10, height = 7.5)
+ggcorrplot(EnvCor, type = "lower", lab = TRUE, colors = c("magenta4", "white", "darkorange"),
+           p.mat = EnvCorPval, insig = "blank", outline.color = "black", hc.order = FALSE, sig.level = 0.05, show.diag = TRUE) +
+  theme(panel.background = element_rect(fill = "grey80", color = "black", size = 1.5),
+        axis.text = element_text(color = "black"),
+        legend.position = c(0.1,0.82),
+        legend.title = element_text(size = 16),
+        legend.background = element_rect(fill = "white", color = "black"))
+
+dev.off()
+```
+
+
+## Fig S2 | Bulk corr
+Cor heatmap for FPOM compartment size
+
+```{r eval=FALSE, include=FALSE}
+RDABulkVars5 <- c( "stream", "logWA",
+                  #"del13C", "del15N",
+                  "perOM", "perCafdm", "perNafdm", "perPafdm",
+                  "CNafdm", "CPafdm", "NPafdm",
+                  "numPerGafdm", "mgCgAFDM", "mgNgAFDM",
+                  "perL53_afdm")
+
+RDAEcosysVars5 <-  c("gAFDMm2", "BacPerM2", "microC_m2", "microN_m2", # 
+                     "gCm2", "gNm2", "gPm2",  "gDMm2S", # Stocks
+                    #"ugU_cell_h_N", "ugU_cell_h_P", "R_cell_h", #cellular fluxes; cor w/ N/mg (0.8), P/mg (0.8), R/mg (0.6)
+                    "ugU_mgAFDM_h_N", "ugU_mgAFDM_h_P", "R_mgDOmgAFDMh_mean", # mass specific fluxes
+                    "ugU_micN_h_N", "ugU_micN_h_P", "R_micN_h",
+                    "ugU_m2_h_N", "ugU_m2_h_P", "R_mgDOm2perH") #Areal fluxes)
+
+
+fbomBEcoRda <- fbomB %>% 
+  select(all_of(RDABulkVars5), all_of(RDAEcosysVars5)) %>% 
+  filter(complete.cases(.)) %>% 
+  mutate_at(vars(perOM:R_mgDOm2perH), funs(scale))
+
+fbomBEcoRdaPred <- fbomBEcoRda %>%
+  select(all_of(RDABulkVars5), -stream) #
+
+fbomBEcoRdaComm <- fbomBEcoRda %>%
+  select(all_of(RDAEcosysVars5))
+```
+
+```{r eval=FALSE, include=FALSE}
+FpomBulkCompCorr <- round(cor(fbomB %>% 
+                        select(all_of(RDABulkVars5), all_of(RDAEcosysVars5), -stream, -perL53_afdm) %>% 
+                        rename("WA" = "logWA",
+                               "%OM" = "perOM",
+                               "%P" = "perPafdm",
+                               "%N" = "perNafdm",
+                               "%C" = "perCafdm", 
+                               "N:P" = "NPafdm",
+                               "C:P" = "CPafdm",
+                               "C:N" = "CNafdm",
+                               "Bac/AFDM" = "numPerGafdm",
+                               "MicC/AFDM" = "mgCgAFDM",
+                               "MicN/AFDM" = "mgNgAFDM",
+                               "gDM/m2" = "gDMm2S",
+                               "gAFDM/m2" = "gAFDMm2", 
+                               "Bac/m2" = "BacPerM2",
+                               "MicC/m2" = "microC_m2",
+                               "MicN/m2" = "microN_m2",
+                               "gP/m2" = "gPm2",
+                               "gN/m2" = "gNm2",
+                               "gC/m2" = "gCm2",
+                               "Nup/AFDM" = "ugU_mgAFDM_h_N",
+                               "Pup/AFDM" = "ugU_mgAFDM_h_P",
+                               "R/AFDM" = "R_mgDOmgAFDMh_mean",
+                               "Nup/biomass" = "ugU_micN_h_N",
+                               "Pup/biomass" = "ugU_micN_h_P",
+                               "R/biomass" = "R_micN_h",
+                               "Nup/m2" = "ugU_m2_h_N",
+                               "Pup/m2" = "ugU_m2_h_P",
+                               "R/m2" = "R_mgDOm2perH") %>% 
+                        #this determines order
+                        select(WA,
+                               '%OM', '%P', '%N', '%C', 'N:P', 'C:P', 'C:N', #composition
+                               'Bac/AFDM', 'MicC/AFDM', 'MicN/AFDM', #bacteria afdm densities
+                               'gDM/m2', 'gAFDM/m2', "MicC/m2", "MicN/m2", 'Bac/m2', 'gC/m2', 'gN/m2', 'gP/m2', #stocks
+                               'Nup/AFDM', 'Pup/AFDM', 'R/AFDM',#mass specific fluxes
+                               "Nup/biomass", "Pup/biomass", "R/biomass", #microb N-specific rates
+                               'Nup/m2', 'Pup/m2', 'R/m2', #areal fluxes)
+                        ) %>% 
+                          filter(complete.cases(.)), method = "spearman"),1)
+
+FpomBulkCompCorrPval <- cor_pmat(fbomB %>% 
+                        select(all_of(RDABulkVars5), all_of(RDAEcosysVars5), -stream, -perL53_afdm) %>% 
+                        rename("WA" = "logWA",
+                               "%OM" = "perOM",
+                               "%P" = "perPafdm",
+                               "%N" = "perNafdm",
+                               "%C" = "perCafdm", 
+                               "N:P" = "NPafdm",
+                               "C:P" = "CPafdm",
+                               "C:N" = "CNafdm",
+                               "Bac/AFDM" = "numPerGafdm",
+                               "MicC/AFDM" = "mgCgAFDM",
+                               "MicN/AFDM" = "mgNgAFDM",
+                               "gDM/m2" = "gDMm2S",
+                               "gAFDM/m2" = "gAFDMm2", 
+                               "Bac/m2" = "BacPerM2",
+                               "MicC/m2" = "microC_m2",
+                               "MicN/m2" = "microN_m2",
+                               "gP/m2" = "gPm2",
+                               "gN/m2" = "gNm2",
+                               "gC/m2" = "gCm2",
+                               "Nup/AFDM" = "ugU_mgAFDM_h_N",
+                               "Pup/AFDM" = "ugU_mgAFDM_h_P",
+                               "R/AFDM" = "R_mgDOmgAFDMh_mean",
+                               "Nup/biomass" = "ugU_micN_h_N",
+                               "Pup/biomass" = "ugU_micN_h_P",
+                               "R/biomass" = "R_micN_h",
+                               "Nup/m2" = "ugU_m2_h_N",
+                               "Pup/m2" = "ugU_m2_h_P",
+                               "R/m2" = "R_mgDOm2perH") %>% 
+                        #this determines order
+                        select(WA,
+                               '%OM', '%P', '%N', '%C', 'N:P', 'C:P', 'C:N', #composition
+                               'Bac/AFDM', 'MicC/AFDM', 'MicN/AFDM', #bacteria afdm densities
+                               'gDM/m2', 'gAFDM/m2', "MicC/m2", "MicN/m2", 'Bac/m2', 'gC/m2', 'gN/m2', 'gP/m2', #stocks
+                               'Nup/AFDM', 'Pup/AFDM', 'R/AFDM',#mass specific fluxes
+                               "Nup/biomass", "Pup/biomass", "R/biomass", #microb N-specific rates
+                               'Nup/m2', 'Pup/m2', 'R/m2', #areal fluxes)
+                        ) %>% 
+                          filter(complete.cases(.)), method = "spearman")
+```
+
+```{r eval=FALSE, include=FALSE}
+# tiff(file.path(here::here("02_plots"), "FigS2.tiff"), height = 20, width = 25, units = 'cm', compression = "lzw", res = 400)
+pdf(file.path(here::here("03_plots"), "FigS2.pdf"), width = 15, height = 12)
+ggcorrplot(FpomBulkCompCorr, type = "lower", lab = TRUE, colors = c("magenta4", "white", "darkorange"),
+           p.mat = FpomBulkCompCorrPval, insig = "blank", outline.color = "black", hc.order = FALSE, sig.level = 0.05, show.diag = TRUE) +
+  theme(panel.background = element_rect(fill = "grey80", color = "black", size = 1.5),
+        axis.text = element_text(color = "black"))
+dev.off()
+```
+
+
+## Fig S6 | size corr
+Size heat map
+
+```{r eval=FALSE, include=FALSE}
+SizeFracParameters2 <- c("stream", "pool", "size", "WA",
+                         "del13C", "del15N",
+                         "perOM", "perCafdm", "perNafdm", "perPafdm",
+                         "CNafdm", "CPafdm", "NPafdm")
+
+fbomS2 <- fbom %>%
+  filter(size != "B") %>% 
+  mutate(perCafdm = ifelse(perCafdm < 70, perCafdm, as.numeric("NA"))) %>% #some of these are unreasonably high due to low DM
+  select(all_of(SizeFracParameters2)) %>% 
+  mutate_at(vars(WA,perOM:NPafdm), funs(log10))  # log trans for normality assumptions
+
+
+fbomSw2 <-  fbomS2 %>% 
+  droplevels() %>% 
+  pivot_wider(id_cols = c("stream", "pool"), names_from = "size", values_from = WA:NPafdm )
+
+FPOMsfCorr2 <- round(cor(fbomSw2 %>% 
+                           select("G250_N:P" = "NPafdm_G250",
+                                  "G250_C:P" = "CPafdm_G250",
+                                  "G250_C:N" = "CNafdm_G250",
+                                  "G250_%P" = "perPafdm_G250",
+                                  "G250_%N" = "perNafdm_G250",
+                                  "G250_%C" = "perCafdm_G250", 
+                                  "G250_%OM" = "perOM_G250",
+                                  "G106_N:P" = "NPafdm_G106",
+                                  "G106_C:P" = "CPafdm_G106",
+                                  "G106_C:N" = "CNafdm_G106",
+                                  "G106_%P" = "perPafdm_G106",
+                                  "G106_%N" = "perNafdm_G106",
+                                  "G106_%C" = "perCafdm_G106", 
+                                  "G106_%OM" = "perOM_G106",
+                                  "G53_N:P" = "NPafdm_G53",
+                                  "G53_C:P" = "CPafdm_G53",
+                                  "G53_C:N" = "CNafdm_G53",
+                                  "G53_%P" = "perPafdm_G53",
+                                  "G53_%N" = "perNafdm_G53",
+                                  "G53_%C" = "perCafdm_G53", 
+                                  "G53_%OM" = "perOM_G53",
+                                  "L53_N:P" = "NPafdm_L53",
+                                  "L53_C:P" = "CPafdm_L53",
+                                  "L53_C:N" = "CNafdm_L53",
+                                  "L53_%P" = "perPafdm_L53",
+                                  "L53_%N" = "perNafdm_L53",
+                                  "L53_%C" = "perCafdm_L53", 
+                                  "L53_%OM" = "perOM_L53",
+                                  "L53_WA" = "WA_L53"
+                           ), method = "spearman", use = "pairwise.complete.obs"),1)
+
+FPOMsfCorrPval2 <- cor_pmat(fbomSw2 %>% 
+                              select("G250_N:P" = "NPafdm_G250",
+                                     "G250_C:P" = "CPafdm_G250",
+                                     "G250_C:N" = "CNafdm_G250",
+                                     "G250_%P" = "perPafdm_G250",
+                                     "G250_%N" = "perNafdm_G250",
+                                     "G250_%C" = "perCafdm_G250", 
+                                     "G250_%OM" = "perOM_G250",
+                                     "G106_N:P" = "NPafdm_G106",
+                                     "G106_C:P" = "CPafdm_G106",
+                                     "G106_C:N" = "CNafdm_G106",
+                                     "G106_%P" = "perPafdm_G106",
+                                     "G106_%N" = "perNafdm_G106",
+                                     "G106_%C" = "perCafdm_G106", 
+                                     "G106_%OM" = "perOM_G106",
+                                     "G53_N:P" = "NPafdm_G53",
+                                     "G53_C:P" = "CPafdm_G53",
+                                     "G53_C:N" = "CNafdm_G53",
+                                     "G53_%P" = "perPafdm_G53",
+                                     "G53_%N" = "perNafdm_G53",
+                                     "G53_%C" = "perCafdm_G53", 
+                                     "G53_%OM" = "perOM_G53",
+                                     "L53_N:P" = "NPafdm_L53",
+                                     "L53_C:P" = "CPafdm_L53",
+                                     "L53_C:N" = "CNafdm_L53",
+                                     "L53_%P" = "perPafdm_L53",
+                                     "L53_%N" = "perNafdm_L53",
+                                     "L53_%C" = "perCafdm_L53", 
+                                     "L53_%OM" = "perOM_L53",
+                                     "L53_WA" = "WA_L53"), method = "spearman", use = "pairwise.complete.obs")
+
+GenericAxisText <- c("N:P", "C:P","C:N", "P","N", "C", "OM",
+                     "N:P", "C:P","C:N", "P","N", "C", "OM",
+                     "N:P", "C:P","C:N", "P","N", "C", "OM",
+                     "N:P", "C:P","C:N", "P","N", "C", "OM",
+                     "WA")
+```
+
+
+Also doctored in powerpoint
+```{r eval=FALSE, include=FALSE}
+# tiff(file.path(here::here("03_plots"), "FigS6.tiff"), height = 20, width = 25, units = 'cm', compression = "lzw", res = 400)
+pdf(file.path(here::here("03_plots"), "FigS6.pdf"), height = 8,width = 10)
+ggcorrplot(FPOMsfCorr2, type = "lower", lab = FALSE, colors = c("magenta4", "white", "darkorange"),
+           p.mat = FPOMsfCorrPval2, insig = "blank", outline.color = "black", hc.order = FALSE, sig.level = 0.05, show.diag = TRUE) +
+  scale_x_discrete(labels = GenericAxisText)+
+  scale_y_discrete(labels = GenericAxisText)+
+  theme(panel.background = element_rect(fill = "grey80", color = "black", size = 1.5),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        legend.position = c(0.1,0.82),
+        legend.title = element_text(size = 16),
+        legend.background = element_rect(fill = "white", color = "black"),
+        plot.background = element_rect(fill = "transparent", color = "transparent"))
+dev.off()
+```
+
+## Fig S5 | bulk bp's
+```{r  eval=FALSE, include=FALSE}
+BulkConstVars <- c( "stream", "pool",
+                  "del13C", "del15N",
+                  "perOM", "perCafdm", "perNafdm", "perPafdm",
+                  "CNafdm", "CPafdm", "NPafdm",
+                  "numPerGafdm", "mgCgAFDM", "mgNgAFDM",
+                  "perL53_afdm")
+
+fbomBallL <- fbomB %>% 
+  select(all_of(BulkConstVars)) %>% 
+  filter(complete.cases(.)) %>% 
+  group_by(stream, pool) %>% 
+  mutate_at(vars(perOM:mgNgAFDM), funs(10^.)) %>% 
+  mutate(numPerGafdm_1e9 = numPerGafdm/1e9) %>% 
+  select(-numPerGafdm) %>% 
+  pivot_longer(cols = del13C:numPerGafdm_1e9, names_to = "meas", values_to = "values") %>% 
+  ungroup() %>% 
+  mutate(meas = as.factor(meas),
+         meas = fct_relevel(meas, c("CNafdm", "CPafdm", "NPafdm", "perCafdm", "perNafdm", "perPafdm", "perOM",
+                                             "mgCgAFDM", "mgNgAFDM", "numPerGafdm_1e9", "perL53_afdm", "del13C", "del15N")),
+        meas = fct_recode(meas,
+                           "C:N (per AFDM)" = "CNafdm",
+                           "C:P (per AFDM)" = "CPafdm",
+                           "mg Mic C/g AFDM" = "mgCgAFDM",
+                           "mg Mic N/g AFDM" = "mgNgAFDM",
+                           "N:P (per AFDM)" = "NPafdm",
+                           "Bac x 1e9/AFDM" = "numPerGafdm_1e9",
+                           "% C (per AFDM)" = "perCafdm",
+                           "% < 53 µm"= "perL53_afdm",
+                           "% N (per AFDM)" = "perNafdm",
+                           "% Organic matter" = "perOM",
+                           "% P (per AFDM)" = "perPafdm",
+                          "del 13C" = "del13C",
+                          "del 15N" = "del15N"))
+```
+
+```{r eval=FALSE, include=FALSE}
+FBOMcompPlot <- ggplot(fbomBallL, aes(y = values, x = stream, fill = stream)) +
+  geom_point() +
+  geom_boxplot(alpha = 0.5) +
+  facet_wrap(vars(meas), scales = "free_y", ncol = 3)+
+  scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red"), guide = FALSE) +
+  xlab(NULL) +
+  ylab(NULL) +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 22),
+        axis.text.x = element_text(size = 12, angle = 90),
+        axis.text.y = element_text(size = 12),
+        panel.grid.major = element_line(color = "grey85", size = 0.5),
+        strip.text.x = element_text(size = 14, face = "bold")) 
+
+
+```
+
+```{r eval=FALSE, include=FALSE}
+pdf(file.path(here::here("03_plots"), "FigS5.pdf"), height = 10, width = 8, encoding = "MacRoman")
+# tiff("02_plots/FigS4.tiff", height = 20, width = 25, units = 'cm', compression = "lzw", res = 400)
+FBOMcompPlot
+dev.off()
+```
+
+
+## Fig S7 | size bp's
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+RDASizeVars <- c( "stream", "size", 
+                  "perOM", "perCafdm", "perNafdm", "perPafdm",
+                  "CNafdm", "CPafdm", "NPafdm")
+
+fbomSall <- fbomS %>% 
+  select(RDASizeVars) %>%
+  group_by(stream, size) %>% 
+  mutate_at(vars(perOM:NPafdm), funs(10^.)) %>% 
+  filter(perNafdm < 10) %>% #removes three outliers for ploting
+  filter(perPafdm  <2) %>% #removes 5 outliers for ploting
+  pivot_longer(cols = perOM:NPafdm, names_to = "meas", values_to = "values") %>% 
+  ungroup() %>% 
+  mutate(meas = as.factor(meas),
+         meas = fct_relevel(meas, c("CNafdm", "CPafdm", "NPafdm", "perCafdm", "perNafdm", "perPafdm", "perOM")),
+         meas = fct_recode(meas,
+                           "C:N (per AFDM)" = "CNafdm",
+                           "C:P (per AFDM)" = "CPafdm",
+                           "N:P (per AFDM)" = "NPafdm",
+                           "% C (per AFDM)" = "perCafdm",
+                           "% N (per AFDM)" = "perNafdm",
+                           "% organic matter" = "perOM",
+                           "% P (per AFDM)" = "perPafdm"))
+```
+
+
+```{r}
+FigS7 <- ggplot(fbomSall, aes(y = values, x = size, fill = stream)) +
+  geom_point() +
+  geom_boxplot(alpha = 0.75) +
+  facet_grid(meas~stream, scales = "free_y") +
+  scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red"), guide = FALSE) +
+  xlab(NULL) +
+  ylab(NULL) +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 22),
+        axis.text.x = element_text(size = 14, angle = 90),
+        axis.text.y = element_text(size = 14),
+        panel.grid.major = element_line(color = "grey85", size = 0.5),
+        legend.justification = c(0,1),
+        legend.position = c(0.68,0.99),
+        legend.text = element_text(size = 12),
+        legend.title = element_blank(),
+        legend.key = element_rect(fill = "transparent"),
+        legend.background = element_rect(fill = "white", color = "black"),
+        strip.text.x = element_text(size = 14, face = "bold")) 
+```
+
+
+```{r include = FALSE}
+pdf(file.path(here::here("03_plots"), "FigS7.pdf"), height = 10, width = 10)
+# tiff("02_plots/FigS5.tiff", height = 25, width = 25, units = 'cm', compression = "lzw", res = 400)
+FigS7
+dev.off()
+```
+
+
+
+## ms N up v CN
+```{r}
+summary(lm(ugU_micN_h_N ~CNafdm, data = fbomB))
+ggplot(fbomB, aes(y = ugU_micN_h_N, x = CNafdm)) + geom_point()
+
+summary(lm(ugU_mgAFDM_h_N ~CNafdm, data = fbomB))
+ggplot(fbomB, aes(y = ugU_mgAFDM_h_N, x = CNafdm)) + geom_point()
+```
+
+## Fig S8 Seston v. WA
+
+### Fig S8B | CN
+```{r}
+
+FigS8B <- ggplot(ses2008, aes(y = C_N, x = logWA)) +
+    geom_point(shape = 21, fill = "gray", size = 8, alpha = 60/100) +
+  xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
+  ylab("FSOM C:N") +
+  stat_smooth(method = "lm", se = FALSE, color = "black") +
+  ylim(0,20) +
+  scale_x_continuous(limits = c(-1, 2.5), breaks = c(-1, -0.5, 0, 0.5,1, 1.5,2, 2.5)) +
+  annotate("text", x = -1, y = 0, label = sesP1lab, parse = TRUE, size = 7, hjust = 0, vjust = 0) +
+  annotate("text", x = -1, y = 19.75, label = "B)", size = 9, fontface = "bold") +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 26),
+        axis.text = element_text(size = 18),
+        panel.grid = element_line(color = "transparent"))
+```
+
+### Fig S8A | chla
+```{r}
+FigS8A <- ggplot(sesChla, aes(y = logChla, x = logWA), color = Y) +
+  geom_point(shape = 21, fill = "gray", size = 8, alpha = 60/100) +
+  xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
+  ylab(expression(paste(log[10]," FSOM Chl a (µg chl a ",L^-1,")"))) +
+  stat_smooth(method = "lm", se = FALSE, color = "black") +
+  annotate("text", x = 1.95, y = -2, label = sesP2lab, parse = TRUE, size = 7)+
+  annotate("text", x = -1, y = 0.25, label = "A)", size = 9, fontface = "bold") +
+  scale_x_continuous(limits = c(-1, 2.5), breaks = c(-1, -0.5, 0, 0.5,1, 1.5,2, 2.5)) +
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 26),
+        axis.text = element_text(size = 18),
+        panel.grid = element_line(color = "transparent"))
+```
+
+### Fig S8D | d13C
+```{r}
+FigS8D <- ggplot(ses2008, aes(y = d13C, x = logWA)) +
+  geom_point(shape = 21, fill = "gray", size = 8, alpha = 60/100) +
+  xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
+  ylab(expression(paste("FSOM ",delta^13,"C (‰)"))) +
+  ylim(-29,-25) +
+  # xlim(-0.75,2.25) +
+  scale_x_continuous(limits = c(-1, 2.5), breaks = c(-1, -0.5, 0, 0.5,1, 1.5,2, 2.5)) +
+  annotate("text", x = -1, y = -29, label = "P = 0.96", size = 7, hjust = 0, vjust = 0) +
+  annotate("text", x = -1, y = -25, label = " D)", size = 9, fontface = "bold")+
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 26),
+        axis.text = element_text(size = 18),
+        panel.grid = element_line(color = "transparent"))
+```
+
+### Fig S8C | 15N
+
+```{r}
+
+FigS8C <- ggplot(ses2008, aes(y = d15N, x = logWA)) +
+  geom_point(shape = 21, fill = "lightgray", size = 8, alpha = 60/100) +
+  xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
+  # xlab(NULL) +
+  ylab(expression(paste("FSOM ",delta^15,"N (‰)"))) +
+  scale_x_continuous(limits = c(-1, 2.5), breaks = c(-1, -0.5, 0, 0.5,1, 1.5,2, 2.5)) +
+  scale_y_continuous(limits = c(-2, 6.5), breaks = c(-2,0, 2,4, 6))+
+  stat_smooth(method = "lm", se = FALSE, color = "black") +
+  annotate("text", x = -1, y = -2, label = sesP4lab, parse = TRUE, size = 7, hjust = 0, vjust = 0) +
+  annotate("text", x = -1, y = 6.39, label = "C)", size = 9, fontface = "bold")+
+  theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+        axis.title = element_text(size = 26),
+        axis.text = element_text(size = 18),
+        panel.grid = element_line(color = "transparent"))
+```
+
+
+### Print
+```{r include = FALSE}
+# tiff(file.path(here::here("03_plots"), "FigS8.tiff"), height = 30, width = 36, units = 'cm', compression = "lzw", res = 400)
+pdf(file.path(here::here("03_plots"), "FigS8.pdf"), height = 12.45, width = 15, encoding = "MacRoman")
+ggarrange(FigS8A, FigS8B, FigS8C, FigS8D, nrow = 2, ncol = 2)
+dev.off()
+```
+
+## Fig S9 FBOM v FSOM
+
+### Fig S9A
+```{r}
+ FigS9A <- ggplot(fbomSes, aes(y = F_CN, x = S_CN, fill = siteName)) +
+    geom_point(shape = 21, alpha = 75/100, size = 7) +
+    geom_abline(intercept = 0, slope = 1) +
+    xlim(0,35) +
+    ylim(0,35) +
+    ylab("FBOM C:N") +
+    xlab("FSOM C:N") +
+    annotate("text", x = 1, y = 35, label = "A)", size = 9)+
+    scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+    theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+          axis.title = element_text(size = 26),
+          axis.text = element_text(size = 16),
+          panel.grid = element_line(color = "transparent"),
+          legend.justification = c(0,1),
+          legend.position = c(0.8,0.98),
+          legend.text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.key = element_rect(fill = "transparent"),
+          legend.background = element_rect(color = "black"))
+```
+
+
+### Fig S9B
+```{r}
+  FigS9B <- ggplot(fbomSes, aes(y = F_13C, x = S_13C, fill = siteName)) +
+    geom_point(shape = 21, alpha = 75/100, size = 7) +
+    geom_abline(intercept = 0, slope = 1)+
+    ylab(expression(paste("FBOM ",delta^13,"C (‰)"))) +
+    xlab(expression(paste("FSOM ",delta^13,"C (‰)"))) +
+    xlim(-30,-20) +
+    ylim(-30,-20)+
+    annotate("text", x = -30, y = -20, label = "B)", size = 9)+
+    scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+    theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+          axis.title = element_text(size = 26),
+          axis.text = element_text(size = 16),
+          panel.grid = element_line(color = "transparent"),
+          legend.justification = c(0,1),
+          legend.position = "none",
+          legend.text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.key = element_rect(fill = "transparent"),
+          legend.background = element_rect(color = "black"))
+```
+
+### Fig S9C
+```{r}
+  FigS9C <- ggplot(fbomSes, aes(y = F_15N, x = S_15N, fill = siteName)) +
+    geom_point(shape = 21, alpha = 75/100, size = 7) +
+    geom_abline(intercept = 0, slope = 1)+
+    ylab(expression(paste("FBOM ",delta^15,"N (‰)"))) +
+    xlab(expression(paste("FSOM ",delta^15,"N (‰)"))) +
+    xlim(-1,4) +
+    ylim(-1,4)+
+    annotate("text", x = -1, y = 3.9, label = "C)", size = 9)+
+    scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
+    theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
+          axis.title = element_text(size = 26),
+          axis.text = element_text(size = 16),
+          panel.grid = element_line(color = "transparent"),
+          legend.justification = c(0,1),
+          legend.position = "none",
+          legend.text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.key = element_rect(fill = "transparent"),
+          legend.background = element_rect(color = "black"))
+```
+
+### Print
+```{r include = FALSE}
+  # tiff(file.path(here::here("03_plots"), "FigS9.tiff"), height = 35, width = 15, units = 'cm', compression = "lzw", res = 300)
+  pdf(file.path(here::here("03_plots"), "FigS9.pdf"), height = 15, width = 6.45, encoding = "MacRoman")
+  grid.arrange(FigS9A, FigS9B, FigS9C, nrow = 3, ncol =1)
+  dev.off()
+```
+
+
+# Tables
+## Table S2
+
+###  Bulk FBOM
+```{r}
+# this is a little convoluted because old version ln transformed responses. This version log10 transforms
+fbomBlongTS2b <- fbomB %>% 
+  select(stream, pool, logWA, gAFDMm2, BacPerM2, microN_m2,
+                              ugU_m2_h_N:R_mgDOm2perH,
+                              ugU_micN_h_N:R_micN_h,
+                              ugU_mgAFDM_h_N:R_mgDOmgAFDMh_mean,microC_m2) %>% 
+  mutate_at(vars(gAFDMm2:R_mgDOmgAFDMh_mean,microC_m2), list(~10^(.))) %>% 
+  mutate(WA = 10^logWA) %>% 
+  mutate(BilBacPerM2 = BacPerM2/1000000000) %>% 
+  select(-BacPerM2, -logWA) %>% 
+  mutate_at(vars(c(gAFDMm2:BilBacPerM2)), list(~log10(.))) %>% #params and WA log10
+  pivot_longer(cols = c(gAFDMm2:microC_m2, BilBacPerM2), names_to = "param", values_to = "value") %>% 
+  mutate(param = as.factor(param))
+```
+
+```{r}
+fbomBlongModTS2b <- fbomBlongTS2b %>% 
+  group_by(param) %>% 
+  nest() %>% 
+  mutate(
+         LmeModel = map(data, LongLMEFun),
+         LmeModelSum = map(LmeModel, ~summary(.x)),
+         LmeR2 = map(LmeModel, r.squaredGLMM),
+         LmeAnova = map(LmeModel, Anova),
+         LmeModelSum2 = map(LmeModel, ~tidy(.x, effects = "fixed")))
+
+TableS2b <- fbomBlongModTS2b %>% 
+  unnest(c(LmeR2, LmeAnova, LmeModelSum2))%>% 
+  select(-data, -LmeModel, -LmeModelSum, -Chisq, -Df, -statistic) %>% 
+  pivot_wider(id_cols = param, names_from = term, values_from = c(LmeR2:std.error)) %>% 
+  #lots of duplicate rows
+  select(-LmeR2_WA, -'Pr(>Chisq)_WA', -'effect_(Intercept)', -'effect_(Intercept)', -'effect_WA',
+         -'term_(Intercept)', -'term_WA') 
+
+TableS2b1 <- TableS2b
+TableS2b1$LmeR2_fixed <- TableS2b1$`LmeR2_(Intercept)`[,1]
+TableS2b1$LmeR2_all <- TableS2b1$`LmeR2_(Intercept)`[,2]
+TableS2b2 <- TableS2b1 %>% 
+  select(-`LmeR2_(Intercept)`)
+```
+
+
+
+
+
+### Size component
+
+```{r}
+fbomSlongTS2s <- fbomScomp2a %>% 
+  select(stream, pool, logWA, perL53_afdm:perG250_afdm) %>% 
+  #rename log10 transformed WA
+  rename("WA" = "logWA") %>% 
+  pivot_longer(cols = c(perL53_afdm:perG250_afdm), names_to = "param", values_to = "value") %>% 
+  mutate(param = as.factor(param))
+```
+
+```{r}
+fbomSlongTS2sMod <- fbomSlongTS2s %>% 
+  group_by(param) %>% 
+  nest() %>% 
+  mutate(
+         LmeModel = map(data, LongLMEFun),
+         LmeModelSum = map(LmeModel, ~summary(.x)),
+         LmeR2 = map(LmeModel, r.squaredGLMM),
+         LmeAnova = map(LmeModel, Anova),
+         LmeModelSum2 = map(LmeModel, ~tidy(.x, effects = "fixed"))
+         )
+```
+
+```{r}
+TableS2s <- fbomSlongTS2sMod %>% 
+  unnest(c(LmeR2, LmeAnova, LmeModelSum2)) %>% 
+  select(-data, -LmeModel, -LmeModelSum, -Chisq, -Df, -statistic) %>% 
+  pivot_wider(id_cols = param, names_from = term, values_from = c(LmeR2:std.error)) %>% 
+  #lots of duplicate rows
+  select(-LmeR2_WA, -'Pr(>Chisq)_WA', -'effect_(Intercept)', -'effect_(Intercept)', -'effect_WA',
+         -'term_(Intercept)', -'term_WA') 
+
+# hard time sep LmeR2 matrix out doing by hand
+TableS2s1 <- TableS2s
+TableS2s1$LmeR2_fixed <- TableS2s$`LmeR2_(Intercept)`[,1]
+TableS2s1$LmeR2_all <- TableS2s$`LmeR2_(Intercept)`[,2]
+TableS2s2 <- TableS2s1 %>% 
+  select(-`LmeR2_(Intercept)`)
+```
+
+
+### seston
+See 11_seston_FigS4_S5
+Note: didn't use mixed effects here because no w/in site replicates
+Entered those manually
+
+### Combine/export
+
+```{r}
+TableS2 <- as.data.frame(rbind(TableS2b2, TableS2s2))
+names(TableS2) <- c("param","p-value", "Intercept", "WAcoef", "InterceptSE", "WAcoefSE","R2_fixed", "R2_full")
+```
+
+
+```{r include = FALSE}
+readr::write_csv(TableS2, file.path(here::here("04_tables"), "TableS2.csv"))
+```
+
+
+
+
+
+# Save/Load image
+
+```{r eval=FALSE, include=FALSE}
+# save.image(file.path(here::here("05_rdat"), "01_FinalAnalysis_Rdat"))
+# load(file.path(here::here("05_rdat"), "01_FinalAnalysis_Rdat"))
+```
