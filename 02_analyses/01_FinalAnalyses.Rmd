@@ -1324,7 +1324,7 @@ Fig2a.gtf <- gtable_frame(Fig2a.g,  width = unit(1, "null"), height = unit(1, "n
 Fig2b.gtf <- gtable_frame(Fig2b.g,  width = unit(1, "null"), height = unit(1, "null"))
 Fig2c.gtf <- gtable_frame(Fig2c.g,  width = unit(1, "null"), height = unit(1, "null"))
 
-Fig2.gtf <- gtable_frame(gtable_rbind(Fig2a.gtf, Fig2b.gtf, Fig2b.gtf),  width = unit(1, "null"), height = unit(3, "null"))
+Fig2.gtf <- gtable_frame(gtable_rbind(Fig2a.gtf, Fig2b.gtf, Fig2c.gtf),  width = unit(1, "null"), height = unit(3, "null"))
 
 pdf(file.path(here::here("03_plots"), "Fig2.pdf"), height = 15, width =7)
   grid.newpage()
@@ -1379,7 +1379,7 @@ fbomBFluxFigs <- fbomBlongGamFig %>%
 P.Eco.Nup <- fbomBFluxFigs$plot[[1]] +
   ylab(expression(atop(textstyle("Areal N uptake"), paste("(µg N ", m^-2," ", h^-1,")")))) +
    scale_y_log10(labels = scales::label_comma(accuracy = 1)) +
-  theme(legend.position = c(0.1,1),
+  theme(legend.position = c(0.04,1),
         legend.background = element_rect(fill = "transparent"),
         legend.text = element_text(size = 19)) +
   annotate("text", x = 14, y = 10^1.09, 
@@ -1433,14 +1433,14 @@ Fig6a.gtf <- gtable_frame(Fig6a.g,  width = unit(1, "null"), height = unit(1, "n
 Fig6b.gtf <- gtable_frame(Fig6b.g,  width = unit(1, "null"), height = unit(1, "null"))
 Fig6c.gtf <- gtable_frame(Fig6c.g,  width = unit(1, "null"), height = unit(1, "null"))
 
-Fig6.gtf <- gtable_frame(gtable_rbind(Fig6a.gtf, Fig6b.gtf, Fig6b.gtf),  width = unit(1, "null"), height = unit(3, "null"))
+Fig6.gtf <- gtable_frame(gtable_rbind(Fig6a.gtf, Fig6b.gtf, Fig6c.gtf),  width = unit(1, "null"), height = unit(3, "null"))
 
 pdf(file.path(here::here("03_plots"), "Fig6.pdf"), height = 15, width =7)
   grid.newpage()
   grid.draw(Fig6.gtf)
-  grid.text("(a)", x = unit(0.04,"npc"), y = unit(0.98,"npc"), gp=gpar(fontsize = 25))
-  grid.text("(b)", x = unit(0.04,"npc"), y = unit(0.65,"npc"), gp=gpar(fontsize = 25))
-  grid.text("(c)", x = unit(0.04,"npc"), y = unit(0.33,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(a)", x = unit(0.06,"npc"), y = unit(0.98,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(b)", x = unit(0.06,"npc"), y = unit(0.65,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(c)", x = unit(0.06,"npc"), y = unit(0.33,"npc"), gp=gpar(fontsize = 25))
 dev.off()
 
 ```
@@ -1481,7 +1481,7 @@ fbomBRateFigsAFDM <- fbomBlongGamFig %>%
 P.Act.Nup.afdm <- fbomBRateFigsAFDM$plot[[1]] +
   ylab(expression(atop("FBOM mass-specific N uptake", paste("(µg N g ", AFDM^-1," ", h^-1,")")))) +
   scale_y_log10(labels = fancy_scientific) +
-  theme(legend.position = c(0.12,1),
+  theme(legend.position = c(0.025,1),
         legend.background = element_rect(fill = "transparent"),
         legend.text = element_text(size = 22)) +
   annotate("text", x = 15, y = 10^-2.6*1000, 
@@ -2568,5 +2568,5 @@ readr::write_csv(TableS2, file.path(here::here("04_tables"), "TableS2.csv"))
 
 ```{r eval=FALSE, include=FALSE}
 # save.image(file.path(here::here("05_rdat"), "01_FinalAnalysis_Rdat"))
-# load(file.path(here::here("05_rdat"), "01_FinalAnalysis_Rdat"))
+load(file.path(here::here("05_rdat"), "01_FinalAnalysis_Rdat"))
 ```
