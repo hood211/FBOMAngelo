@@ -41,6 +41,8 @@ library(purrr)
 library(mgcv)
 library(tidymv)
 library(Hmisc)
+library(egg)
+library(grid)
 ```
 
 # LOAD DATA
@@ -1128,8 +1130,8 @@ Fig2a <- ggplot(fbomB, aes(y = 10^(gAFDMm2), x = 10^logWA, fill = stream)) +
   xlab(expression(paste("Watershed area (", km^2,")"))) +
   # scale_x_continuous(limits = c(-0.5, 2.5), breaks = c(-0.5, 0.5,  1.5,  2.5)) +
   theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
-        axis.title = element_text(size = 24),
-        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 20),
+        axis.text = element_text(size = 16),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         legend.position="top",
@@ -1138,7 +1140,7 @@ Fig2a <- ggplot(fbomB, aes(y = 10^(gAFDMm2), x = 10^logWA, fill = stream)) +
         legend.title = element_blank(),
         legend.key = element_rect(fill = "transparent"),
         legend.background = element_rect(fill = "grey90", color = "black")) +
-  annotate("text", x = 0.6, y = 115, label = "A)", size = 10) +
+  # annotate("text", x = 0.6, y = 115, label = "A)", size = 10) +
   annotate("text", x = 10, y = 2, 
            label = paste0("P = 0.520;"),
            size = 7) +
@@ -1220,6 +1222,8 @@ dev.off()
 
 
 
+
+
 ### Fig 2BC & S3
 
 ```{r}
@@ -1238,8 +1242,8 @@ fbomBStockFigs <- fbomBlongGamFig %>%
                       ylab(param) +
                       xlab(expression(paste("Watershed area (", km^2,")"))) +
                       theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
-                              axis.title = element_text(size = 24),
-                              axis.text = element_text(size = 20),
+                              axis.title = element_text(size = 20),
+                              axis.text = element_text(size = 16),
                               panel.grid.major = element_blank(),
                               panel.grid.minor = element_blank(),
                               legend.justification = c(0,1),
@@ -1264,8 +1268,7 @@ P.Stock.Bac <- fbomBStockFigs$plot[[2]] +
   annotate("text", x = 80, y = 0.510, 
          label = paste("R^2 == ",
                        round(fbomBlongGam$LmeR2[[11]][1,1][[1]],3)), parse = TRUE,
-         size = 7, fontface = "bold") +
-  annotate("text", x = 0.6, y = 30, label = "C)", size = 10)
+         size = 7, fontface = "bold") 
 
 P.Stock.micN <- fbomBStockFigs$plot[[1]] +
   ylab(expression(paste("Microbial biomass (mg N ",m^-2,")"))) +
@@ -1278,8 +1281,7 @@ P.Stock.micN <- fbomBStockFigs$plot[[1]] +
   annotate("text", x = 73, y = 0.53, 
          label = paste("R^2 == ",
                        round(fbomBlongGam$LmeR2[[1]][1,1][[1]],3)), parse = TRUE,
-         size = 7, fontface = "bold")+
-  annotate("text", x = 0.6, y = 400, label = "B)", size = 10) 
+         size = 7, fontface = "bold")
 
 P.Stock.micC <- fbomBStockFigs$plot[[3]] +
   ylab(expression(paste("Microbial biomass (mg C ",m^-2,")"))) +
@@ -1312,6 +1314,30 @@ pdf(file.path(here::here("03_plots"), "Fig2.pdf"), height = 15, width =7)
 ggarrange(Fig2a, P.Stock.micN, P.Stock.Bac, nrow = 3, ncol = 1)
 dev.off()
 ```
+
+```{r}
+Fig2a.g <- ggplotGrob(Fig2a)
+Fig2b.g <- ggplotGrob(P.Stock.micN)
+Fig2c.g <- ggplotGrob(P.Stock.Bac)
+
+Fig2a.gtf <- gtable_frame(Fig2a.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig2b.gtf <- gtable_frame(Fig2b.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig2c.gtf <- gtable_frame(Fig2c.g,  width = unit(1, "null"), height = unit(1, "null"))
+
+Fig2.gtf <- gtable_frame(gtable_rbind(Fig2a.gtf, Fig2b.gtf, Fig2b.gtf),  width = unit(1, "null"), height = unit(3, "null"))
+
+pdf(file.path(here::here("03_plots"), "Fig2.pdf"), height = 15, width =7)
+  grid.newpage()
+  grid.draw(Fig2.gtf)
+  grid.text("(a)", x = unit(0.04,"npc"), y = unit(0.98,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(b)", x = unit(0.04,"npc"), y = unit(0.65,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(c)", x = unit(0.04,"npc"), y = unit(0.33,"npc"), gp=gpar(fontsize = 25))
+dev.off()
+
+```
+
+
+
 
 #### Print Fig S3
 ```{r eval=FALSE, include=FALSE}
@@ -1356,7 +1382,7 @@ P.Eco.Nup <- fbomBFluxFigs$plot[[1]] +
   theme(legend.position = c(0.1,1),
         legend.background = element_rect(fill = "transparent"),
         legend.text = element_text(size = 19)) +
-  annotate("text", x = 19, y = 10^1.09, 
+  annotate("text", x = 14, y = 10^1.09, 
            label = paste0("P = ",
                          ifelse(round(fbomBlongGam$LmeAnova[[2]][1,3],3)  < 0.001, 
                                 "< 0.001",round(fbomBlongGam$LmeAnova[[2]][1,3],3)), ";"),
@@ -1365,13 +1391,12 @@ P.Eco.Nup <- fbomBFluxFigs$plot[[1]] +
          label = paste("R^2 == ",
                        round(fbomBlongGam$LmeR2[[2]][1,1][[1]],3)), parse = TRUE,
          size = 7, fontface = "bold")+
-  annotate("text", x = 0.6, y = 9000, label = "A)", size = 10) +
   guides(linetype = FALSE)
 
 P.Eco.Pup <- fbomBFluxFigs$plot[[2]] +
   ylab(expression(atop(textstyle("Areal P uptake"), paste("(µg P ", m^-2," ", h^-1,")")))) +
     scale_y_log10(labels = scales::label_comma(accuracy = 1)) +
-  annotate("text", x = 19, y = 0.4, 
+  annotate("text", x = 14, y = 0.4, 
            label = paste0("P = ",
                          ifelse(round(fbomBlongGam$LmeAnova[[3]][1,3],3) < 0.001, 
                                 "< 0.001",round(fbomBlongGam$LmeAnova[[3]][1,3],3)), ";"),
@@ -1379,14 +1404,13 @@ P.Eco.Pup <- fbomBFluxFigs$plot[[2]] +
   annotate("text", x = 83, y = 0.43, 
          label = paste("R^2 == ",
                        round(fbomBlongGam$LmeR2[[3]][1,1][[1]],3)), parse = TRUE,
-         size = 7, fontface = "bold")+
-  annotate("text", x = 0.6, y = 1400, label = "B)", size = 10)
+         size = 7, fontface = "bold")
 
 
 P.Eco.R <- fbomBFluxFigs$plot[[3]] +
   ylab(expression(atop(textstyle("Areal Respiration"), paste("(mg DO ", m^-2," ", h^-1,")")))) +
     scale_y_log10(labels = scales::label_comma(accuracy = 1)) +
-  annotate("text", x = 22, y = 0.8, 
+  annotate("text", x = 14, y = 0.8, 
            label = paste0("P = ",
                          ifelse(round(fbomBlongGam$LmeAnova[[4]][1,3],3) < 0.001, 
                                 "< 0.001",round(fbomBlongGam$LmeAnova[[4]][1,3],3)), ";"),
@@ -1394,19 +1418,32 @@ P.Eco.R <- fbomBFluxFigs$plot[[3]] +
   annotate("text", x = 80, y = 0.83, 
          label = paste("R^2 == ",
                        round(fbomBlongGam$LmeR2[[4]][1,1][[1]],3)), parse = TRUE,
-         size = 7, fontface = "bold")+
-  annotate("text", x = 0.6, y = 140, label = "C)", size = 10)
+         size = 7, fontface = "bold")
 ```
 
 #### Print
-```{r eval=FALSE, include=FALSE}
-pdf(file.path(here::here("03_plots"), "Fig6.pdf"), height = 17, width = 7.75)
-grid.arrange(P.Eco.Nup, P.Eco.Pup,P.Eco.R, 
-             nrow = 3, ncol = 1)
+
+
+```{r}
+Fig6a.g <- ggplotGrob(P.Eco.Nup)
+Fig6b.g <- ggplotGrob(P.Eco.Pup)
+Fig6c.g <- ggplotGrob(P.Eco.R)
+
+Fig6a.gtf <- gtable_frame(Fig6a.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig6b.gtf <- gtable_frame(Fig6b.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig6c.gtf <- gtable_frame(Fig6c.g,  width = unit(1, "null"), height = unit(1, "null"))
+
+Fig6.gtf <- gtable_frame(gtable_rbind(Fig6a.gtf, Fig6b.gtf, Fig6b.gtf),  width = unit(1, "null"), height = unit(3, "null"))
+
+pdf(file.path(here::here("03_plots"), "Fig6.pdf"), height = 15, width =7)
+  grid.newpage()
+  grid.draw(Fig6.gtf)
+  grid.text("(a)", x = unit(0.04,"npc"), y = unit(0.98,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(b)", x = unit(0.04,"npc"), y = unit(0.65,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(c)", x = unit(0.04,"npc"), y = unit(0.33,"npc"), gp=gpar(fontsize = 25))
 dev.off()
+
 ```
-
-
 
 
 ## Fig 5 | ms fluxes
@@ -1426,7 +1463,7 @@ fbomBRateFigsAFDM <- fbomBlongGamFig %>%
                       ylab(param) +
                       xlab(expression(paste("Watershed area (", km^2,")"))) +
                       theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
-                              axis.title = element_text(size = 30),
+                              axis.title = element_text(size = 28),
                               axis.text = element_text(size = 20),
                               panel.grid.major = element_blank(),
                               panel.grid.minor = element_blank(),
@@ -1456,7 +1493,6 @@ P.Act.Nup.afdm <- fbomBRateFigsAFDM$plot[[1]] +
            label = paste("R^2 == ",
                          round(fbomBlongGam$LmeR2[[8]][1,1][[1]],3)), parse = TRUE,
            size = 9, fontface = "bold")+
-  annotate("text", x = 0.6, y = 0.5*1000, label = "A)", size = 12)+
   guides(linetype = FALSE) 
 
 P.Act.Pup.afdm <- fbomBRateFigsAFDM$plot[[2]] +
@@ -1470,8 +1506,7 @@ P.Act.Pup.afdm <- fbomBRateFigsAFDM$plot[[2]] +
   annotate("text", x = 75, y = 10^-3.98*1000, 
            label = paste("R^2 == ",
                          round(fbomBlongGam$LmeR2[[9]][1,1][[1]],3)), parse = TRUE,
-           size = 9, fontface = "bold")+
-  annotate("text", x = 0.6, y = 0.1*1000, label = "B)", size = 12)
+           size = 9, fontface = "bold")
 
 
 P.Act.R.afdm <- fbomBRateFigsAFDM$plot[[3]] +
@@ -1485,8 +1520,7 @@ P.Act.R.afdm <- fbomBRateFigsAFDM$plot[[3]] +
   annotate("text", x = 65, y = 10^-4.49*1000, 
            label = paste("R^2 == ",
                          round(fbomBlongGam$LmeR2[[10]][1,1][[1]],3)), parse = TRUE,
-           size = 9, fontface = "bold")+
-  annotate("text", x = 0.6, y = 3e-3*1000, label = "C)", size = 12)
+           size = 9, fontface = "bold")
 ```
 
 
@@ -1507,7 +1541,7 @@ fbomBRateFigsMicN <- fbomBlongGamFig %>%
                       ylab(param) +
                       xlab(expression(paste("Watershed area (", km^2,")"))) +
                       theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
-                              axis.title = element_text(size = 30),
+                              axis.title = element_text(size = 28),
                               axis.text = element_text(size = 20),
                               panel.grid.major = element_blank(),
                               panel.grid.minor = element_blank(),
@@ -1547,8 +1581,7 @@ P.Act.Nup.N <- fbomBRateFigsMicN$plot[[1]] +
   annotate("text", x = 70, y = 10^-0.98, 
            label = paste("R^2 == ",
                          round(fbomBlongGam$LmeR2[[5]][1,1][[1]],3)), parse = TRUE,
-           size = 9, fontface = "bold")+
-  annotate("text", x = 0.6, y = 1e3, label = "D)", size = 12)
+           size = 9, fontface = "bold")
 
 P.Act.Pup.N <- fbomBRateFigsMicN$plot[[2]] +
   ylab(expression(atop("Biomass-specific P uptake", paste("(µg P mg microbial ",N^-1," ", h^-1,")")))) +
@@ -1561,8 +1594,7 @@ P.Act.Pup.N <- fbomBRateFigsMicN$plot[[2]] +
   annotate("text", x = 70, y = 10^-1.285, 
            label = paste("R^2 == ",
                          round(fbomBlongGam$LmeR2[[6]][1,1][[1]],3)), parse = TRUE,
-           size = 9, fontface = "bold")+
-  annotate("text", x = 0.6, y = 1e3, label = "E)", size = 12)
+           size = 9, fontface = "bold")
 
 
 P.Act.R.N <- fbomBRateFigsMicN$plot[[3]] +
@@ -1576,18 +1608,43 @@ P.Act.R.N <- fbomBRateFigsMicN$plot[[3]] +
   annotate("text", x = 70, y = 10^-1.98, 
            label = paste("R^2 == ",
                          round(fbomBlongGam$LmeR2[[7]][1,1][[1]],3)), parse = TRUE,
-           size = 9, fontface = "bold")+
-  annotate("text", x = 0.6, y = 50, label = "F)", size = 12)
+           size = 9, fontface = "bold")
 ```
 
 ### Print
+
 ```{r eval=FALSE, include=FALSE}
-pdf(file.path(here::here("03_plots"), "Fig5.pdf"), height = 15, width = 27) #14/24 - 
-grid.arrange(P.Act.Nup.afdm, P.Act.Pup.afdm, P.Act.R.afdm,
-             P.Act.Nup.N, P.Act.Pup.N, P.Act.R.N,
-             nrow = 2, ncol = 3)
+Fig5a.g <- ggplotGrob(P.Act.Nup.afdm)
+Fig5b.g <- ggplotGrob(P.Act.Pup.afdm)
+Fig5c.g <- ggplotGrob(P.Act.R.afdm)
+Fig5d.g <- ggplotGrob(P.Act.Nup.N)
+Fig5e.g <- ggplotGrob(P.Act.Pup.N)
+Fig5f.g <- ggplotGrob(P.Act.R.N)
+
+Fig5a.gtf <- gtable_frame(Fig5a.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig5b.gtf <- gtable_frame(Fig5b.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig5c.gtf <- gtable_frame(Fig5c.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig5d.gtf <- gtable_frame(Fig5d.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig5e.gtf <- gtable_frame(Fig5e.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig5f.gtf <- gtable_frame(Fig5f.g,  width = unit(1, "null"), height = unit(1, "null"))
+
+Fig5abc.gtf <- gtable_frame(gtable_cbind(Fig5a.gtf, Fig5b.gtf, Fig5c.gtf),  width = unit(1, "null"), height = unit(2, "null"))
+Fig5def.gtf <- gtable_frame(gtable_cbind(Fig5d.gtf, Fig5e.gtf, Fig5f.gtf),  width = unit(1, "null"), height = unit(2, "null"))
+Fig5.gtf <- gtable_frame(gtable_rbind(Fig5abc.gtf, Fig5def.gtf))
+
+pdf(file.path(here::here("03_plots"), "Fig5.pdf"), height = 15, width = 27)
+  grid.newpage()
+  grid.draw(Fig5.gtf)
+  grid.text("(a)", x = unit(0.015,"npc"), y = unit(0.99,"npc"), gp=gpar(fontsize = 32))
+  grid.text("(b)", x = unit(0.35,"npc"), y = unit(0.99,"npc"), gp=gpar(fontsize = 32))
+  grid.text("(c)", x = unit(0.68,"npc"), y = unit(0.99,"npc"), gp=gpar(fontsize = 32))
+  grid.text("(d)", x = unit(0.015,"npc"), y = unit(0.49,"npc"), gp=gpar(fontsize = 32))
+  grid.text("(e)", x = unit(0.35,"npc"), y = unit(0.49,"npc"), gp=gpar(fontsize = 32))
+  grid.text("(f)", x = unit(0.68,"npc"), y = unit(0.49,"npc"), gp=gpar(fontsize = 32))
 dev.off()
+
 ```
+
 
 
 ## Fig3 | RDA biplots
@@ -1627,7 +1684,7 @@ Fig3A <- ggplot() +
         legend.title = element_blank(),
         legend.key = element_rect(fill = "transparent")) +
   guides(fill = guide_legend(nrow = 2, byrow = TRUE, title.position = "top"))+
-  annotate("text", x = -1.5, y = 1.9, label = "A) Bulk fraction", size = 10, hjust = 0)
+  annotate("text", x = -1.5, y = 1.9, label = "Bulk fraction", size = 10, hjust = 0)
 ```
 
 
@@ -1665,7 +1722,7 @@ Fig3B <-ggplot() +
         legend.key = element_rect(fill = "transparent", size = 3),
         legend.box = "horizontal")+
   guides(size = guide_legend(nrow = 2, byrow = TRUE, title.position = "top"))+
-  annotate("text", x = -1.5, y = 1.4, label = "B) Size fractions", size = 10, hjust = 0) 
+  annotate("text", x = -1.5, y = 1.4, label = "Size fractions", size = 10, hjust = 0) 
 ```
 
 ### Fig3c - ms rates
@@ -1699,7 +1756,7 @@ Fig3C <- ggplot() +
         legend.text = element_text(size = 12),
         legend.title = element_blank(),
         legend.key = element_rect(fill = "transparent")) +
-  annotate("text", x = -2.5, y = 2.4, label = "C) Activity rates", size = 10, hjust = 0) 
+  annotate("text", x = -2.5, y = 2.4, label = "Activity rates", size = 10, hjust = 0) 
 ```
 
 ### Fig3d - areal rates
@@ -1734,16 +1791,36 @@ Fig3D <-ggplot() +
         legend.text = element_text(size = 12),
         legend.title = element_blank(),
         legend.key = element_rect(fill = "transparent")) +
-  annotate("text", x = -1, y = 1, label = "D) Areal uptake & respiration", size = 10, hjust = 0)
+  annotate("text", x = -1, y = 1, label = "Areal uptake & respiration", size = 10, hjust = 0)
 
 ```
 
 ### Print
-```{r eval=FALSE, include=FALSE}
+
+```{r}
+Fig3a.g <- ggplotGrob(Fig3A)
+Fig3b.g <- ggplotGrob(Fig3B)
+Fig3c.g <- ggplotGrob(Fig3C)
+Fig3d.g <- ggplotGrob(Fig3D)
+
+Fig3a.gtf <- gtable_frame(Fig3a.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig3b.gtf <- gtable_frame(Fig3b.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig3c.gtf <- gtable_frame(Fig3c.g,  width = unit(1, "null"), height = unit(1, "null"))
+Fig3d.gtf <- gtable_frame(Fig3d.g,  width = unit(1, "null"), height = unit(1, "null"))
+
+Fig3ab.gtf <- gtable_frame(gtable_cbind(Fig3a.gtf, Fig3b.gtf),  width = unit(1, "null"), height = unit(2, "null"))
+Fig3cd.gtf <- gtable_frame(gtable_cbind(Fig3c.gtf, Fig3d.gtf),  width = unit(1, "null"), height = unit(2, "null"))
+Fig3.gtf <- gtable_frame(gtable_rbind(Fig3ab.gtf, Fig3cd.gtf))
+
 pdf(file.path(here::here("03_plots"), "Fig3.pdf"), height = 12, width = 16)
-# tiff("02_plots/Fig3.tiff", height = 25, width = 30, units = 'cm', compression = "lzw", res = 400)
-ggarrange(Fig3A, Fig3B, Fig3C, Fig3D, nrow = 2, ncol = 2)
+  grid.newpage()
+  grid.draw(Fig3.gtf)
+  grid.text("(a)", x = unit(0.015,"npc"), y = unit(0.98,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(b)", x = unit(0.515,"npc"), y = unit(0.98,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(c)", x = unit(0.015,"npc"), y = unit(0.48,"npc"), gp=gpar(fontsize = 25))
+  grid.text("(d)", x = unit(0.515,"npc"), y = unit(0.48,"npc"), gp=gpar(fontsize = 25))
 dev.off()
+
 ```
 
 
