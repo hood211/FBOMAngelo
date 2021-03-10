@@ -4,7 +4,8 @@
 	library(ggthemes)
 	library(gridExtra)
 	library(forcats)
-
+	library(ggpubr)
+	
 # THEME
 	# theme_set(theme_few(base_size = 20))
 
@@ -51,9 +52,8 @@ summary(lm(C_N ~ logWA, ses2008))
 sesP1lab <- "atop(R^2==0.63,P < 0.001)"
 sesP1 <- ggplot(ses2008, aes(y = C_N, x = logWA)) +
     geom_point(shape = 21, fill = "gray", size = 8, alpha = 60/100) +
-  # xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
-  xlab(NULL) +
-  ylab("FSOM C:N") +
+  xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
+  ylab("Suspended POM C:N") +
   stat_smooth(method = "lm", se = FALSE, color = "black") +
   ylim(0,20) +
   scale_x_continuous(limits = c(-1, 2.5), breaks = c(-1, -0.5, 0, 0.5,1, 1.5,2, 2.5)) +
@@ -75,9 +75,8 @@ summary(lm(logChla ~ logWA, sesChla))
 sesP2lab <- "atop(R^2==0.76,P < 0.001)"
 sesP2 <- ggplot(sesChla, aes(y = logChla, x = logWA), color = Y) +
   geom_point(shape = 21, fill = "gray", size = 8, alpha = 60/100) +
-  # xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
   xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
-  ylab(expression(paste(log[10]," FSOM Chl a (µg chl a ",L^-1,")"))) +
+  ylab(expression(atop(paste(log[10]," suspended POM Chl a"), paste("(µg chl a ",L^-1,")")))) +
   stat_smooth(method = "lm", se = FALSE, color = "black") +
   annotate("text", x = 1.95, y = -2, label = sesP2lab, parse = TRUE, size = 7)+
   annotate("text", x = -1, y = 0.25, label = "C)", size = 9, fontface = "bold") +
@@ -94,7 +93,7 @@ summary(lm(d13C ~ logWA, ses2008))
 sesP3 <- ggplot(ses2008, aes(y = d13C, x = logWA)) +
   geom_point(shape = 21, fill = "gray", size = 8, alpha = 60/100) +
   xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
-  ylab(expression(paste("FSOM ",delta^13,"C (‰)"))) +
+  ylab(expression(paste("Suspended POM ",delta^13,"C (‰)"))) +
   ylim(-29,-25) +
   # xlim(-0.75,2.25) +
   scale_x_continuous(limits = c(-1, 2.5), breaks = c(-1, -0.5, 0, 0.5,1, 1.5,2, 2.5)) +
@@ -110,9 +109,8 @@ summary(lm(d15N ~ logWA, ses2008))
 sesP4lab <- "atop(R^2==0.48,P==0.004)"
 sesP4 <- ggplot(ses2008, aes(y = d15N, x = logWA)) +
   geom_point(shape = 21, fill = "lightgray", size = 8, alpha = 60/100) +
-  # xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
-  xlab(NULL) +
-  ylab(expression(paste("FSOM ",delta^15,"N (‰)"))) +
+  xlab(expression(paste(log[10]," watershed area (",km^-2,")"))) +
+  ylab(expression(paste("Suspended POM ",delta^15,"N (‰)"))) +
   scale_x_continuous(limits = c(-1, 2.5), breaks = c(-1, -0.5, 0, 0.5,1, 1.5,2, 2.5)) +
   scale_y_continuous(limits = c(-2, 6.5), breaks = c(-2,0, 2,4, 6))+
   stat_smooth(method = "lm", se = FALSE, color = "black") +
@@ -123,11 +121,13 @@ sesP4 <- ggplot(ses2008, aes(y = d15N, x = logWA)) +
         axis.text = element_text(size = 18),
         panel.grid = element_line(color = "transparent"))
 
-library(ggpubr)
-tiff("02_plots/FigS8.tiff", height = 30, width = 36, units = 'cm', compression = "lzw", res = 400)
+
+tiff(file.path(here::here("03_plots"), "FigS8.tiff"), height = 30, width = 36, units = 'cm', compression = "lzw", res = 400)
 # grid.arrange(sesP1, sesP2, sesP3, sesP4, nrow = 2, ncol = 2)
-ggarrange(sesP1, sesP4, sesP2, sesP3, nrow = 2, ncol = 2)
+ggarrange(sesP2, sesP1, sesP4, sesP3, nrow = 2, ncol = 2)
 dev.off()
+
+
 	
 save.image("11_seston_Fig8_rdat")
 
