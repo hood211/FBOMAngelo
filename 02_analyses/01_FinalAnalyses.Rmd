@@ -1124,7 +1124,7 @@ Fig2a <- ggplot(fbomB, aes(y = 10^(gAFDMm2), x = 10^logWA, fill = stream)) +
   geom_point(shape = 22, size = 6) +
   scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
   xlab(NULL) +
-  ylab(expression(paste("FBOM stock (g AFDM ",m^-2,")"))) +
+  ylab(expression(atop("Benthic POM stock", paste("(g AFDM ",m^-2,")")))) +
   scale_x_log10() +
   scale_y_log10() +
   xlab(expression(paste("Watershed area (", km^2,")"))) +
@@ -1191,7 +1191,7 @@ FigS4 <-ggplot() +
   scale_x_log10()+
   scale_y_continuous(limits = c(0, 120), breaks = c(0, 25, 50, 75, 100)) +
   xlab(expression(paste("Watershed area (", km^2, ")"))) +
-  ylab("Percent of bulk FBOM") +
+  ylab("Percent of bulk benthic POM") +
                # ylim(0,1.1) +
   theme(axis.title = element_text(size = 22),
          axis.text = element_text(size = 14),
@@ -1258,7 +1258,7 @@ fbomBStockFigs <- fbomBlongGamFig %>%
 
 ```{r}
 P.Stock.Bac <- fbomBStockFigs$plot[[2]] +
-  ylab(expression(paste("Bacterial density (", 10^9," ", m^-2,")"))) +
+  ylab(expression(atop("Bacterial density", paste("(",10^9," ", m^-2,")")))) +
   scale_y_log10(limits = c(0.500,35.000)) +
   annotate("text", x = 16, y = 0.500, 
            label = paste0("P = ",
@@ -1271,7 +1271,7 @@ P.Stock.Bac <- fbomBStockFigs$plot[[2]] +
          size = 7, fontface = "bold") 
 
 P.Stock.micN <- fbomBStockFigs$plot[[1]] +
-  ylab(expression(paste("Microbial biomass (mg N ",m^-2,")"))) +
+  ylab(expression(atop("Microbial biomass", paste("(mg N ",m^-2,")")))) +
   scale_y_log10() +
   annotate("text", x = 20, y = 0.5, 
            label = paste0("P = ",
@@ -1308,12 +1308,7 @@ P.Stock.micC <- fbomBStockFigs$plot[[3]] +
 ```
 
 #### Print Fig 2
-```{r eval=FALSE, include=FALSE}
-# tiff("02_plots/Fig2.tiff", height = 25, width = 15, units = 'cm', compression = "lzw", res = 400)
-pdf(file.path(here::here("03_plots"), "Fig2.pdf"), height = 15, width =7)
-ggarrange(Fig2a, P.Stock.micN, P.Stock.Bac, nrow = 3, ncol = 1)
-dev.off()
-```
+
 
 ```{r}
 Fig2a.g <- ggplotGrob(Fig2a)
@@ -1479,7 +1474,7 @@ fbomBRateFigsAFDM <- fbomBlongGamFig %>%
 ### Activity/AFDM
 ```{r}
 P.Act.Nup.afdm <- fbomBRateFigsAFDM$plot[[1]] +
-  ylab(expression(atop("FBOM mass-specific N uptake", paste("(µg N g ", AFDM^-1," ", h^-1,")")))) +
+  ylab(expression(atop("Mass-specific N uptake", paste("(µg N g ", AFDM^-1," ", h^-1,")")))) +
   scale_y_log10(labels = fancy_scientific) +
   theme(legend.position = c(0.025,1),
         legend.background = element_rect(fill = "transparent"),
@@ -1496,7 +1491,7 @@ P.Act.Nup.afdm <- fbomBRateFigsAFDM$plot[[1]] +
   guides(linetype = FALSE) 
 
 P.Act.Pup.afdm <- fbomBRateFigsAFDM$plot[[2]] +
-  ylab(expression(atop("FBOM mass-specific P uptake", paste("(µg P g ", AFDM^-1," ", h^-1,")")))) +
+  ylab(expression(atop("Mass-specific P uptake", paste("(µg P g ", AFDM^-1," ", h^-1,")")))) +
   scale_y_log10(labels = fancy_scientific) +
   annotate("text", x = 13, y = 10^-4*1000, 
            label = paste0("P = ",
@@ -1510,7 +1505,7 @@ P.Act.Pup.afdm <- fbomBRateFigsAFDM$plot[[2]] +
 
 
 P.Act.R.afdm <- fbomBRateFigsAFDM$plot[[3]] +
-  ylab(expression(atop("FBOM mass-specific respiration", paste("(mg DO g ", AFDM^-1," ", h^-1,")")))) +
+  ylab(expression(atop("Mass-specific respiration", paste("(mg DO g ", AFDM^-1," ", h^-1,")")))) +
   scale_y_log10(labels = fancy_scientific) +
   annotate("text", x = 15, y = 10^-4.5*1000, 
            label = paste0("P = ",
@@ -2379,8 +2374,8 @@ dev.off()
     geom_abline(intercept = 0, slope = 1) +
     xlim(0,35) +
     ylim(0,35) +
-    ylab("FBOM C:N") +
-    xlab("FSOM C:N") +
+    ylab("Benthic POM C:N") +
+    xlab("Suspended POM C:N") +
     annotate("text", x = 1, y = 35, label = "A)", size = 9)+
     scale_fill_manual(values = c("blue", "dodgerblue2", "deepskyblue", "lightpink", "hotpink", "red")) +
     theme(panel.background = element_rect(fill = "transparent", color = "black", size = 1.25),
@@ -2401,8 +2396,8 @@ dev.off()
   FigS9B <- ggplot(fbomSes, aes(y = F_13C, x = S_13C, fill = siteName)) +
     geom_point(shape = 21, alpha = 75/100, size = 7) +
     geom_abline(intercept = 0, slope = 1)+
-    ylab(expression(paste("FBOM ",delta^13,"C (‰)"))) +
-    xlab(expression(paste("FSOM ",delta^13,"C (‰)"))) +
+    ylab(expression(paste("Benthic POM ",delta^13,"C (‰)"))) +
+    xlab(expression(paste("Suspended POM ",delta^13,"C (‰)"))) +
     xlim(-30,-20) +
     ylim(-30,-20)+
     annotate("text", x = -30, y = -20, label = "B)", size = 9)+
@@ -2424,8 +2419,8 @@ dev.off()
   FigS9C <- ggplot(fbomSes, aes(y = F_15N, x = S_15N, fill = siteName)) +
     geom_point(shape = 21, alpha = 75/100, size = 7) +
     geom_abline(intercept = 0, slope = 1)+
-    ylab(expression(paste("FBOM ",delta^15,"N (‰)"))) +
-    xlab(expression(paste("FSOM ",delta^15,"N (‰)"))) +
+    ylab(expression(paste("Benthic POM ",delta^15,"N (‰)"))) +
+    xlab(expression(paste("Suspended POM ",delta^15,"N (‰)"))) +
     xlim(-1,4) +
     ylim(-1,4)+
     annotate("text", x = -1, y = 3.9, label = "C)", size = 9)+
@@ -2568,5 +2563,5 @@ readr::write_csv(TableS2, file.path(here::here("04_tables"), "TableS2.csv"))
 
 ```{r eval=FALSE, include=FALSE}
 # save.image(file.path(here::here("05_rdat"), "01_FinalAnalysis_Rdat"))
-load(file.path(here::here("05_rdat"), "01_FinalAnalysis_Rdat"))
+# load(file.path(here::here("05_rdat"), "01_FinalAnalysis_Rdat"))
 ```
